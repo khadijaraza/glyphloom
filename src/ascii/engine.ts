@@ -237,7 +237,9 @@ export class AsciiEngine {
     // Narrow screens get fewer columns so glyphs stay legible.
     if (this.effectiveCols() !== this.grid?.cols) this.prepare()
     else this.resize()
-    if (this.paused) this.draw(1.7)
+    // Draw immediately rather than waiting for the next animation frame: resizing
+    // clears the canvas, and hidden tabs don't get animation frames at all.
+    this.draw(this.paused ? 1.7 : (performance.now() - this.start) / 1000)
   }
 
   get rows() {
@@ -296,7 +298,7 @@ export class AsciiEngine {
       })
     // Moving effects decide *which* cell shows, so they run before the rest.
     this.effects.sort((a, b) => order(a.effect.kind) - order(b.effect.kind))
-    if (this.paused) this.draw((performance.now() - this.start) / 1000)
+    this.draw(this.paused ? 1.7 : (performance.now() - this.start) / 1000)
   }
 
   private resize() {

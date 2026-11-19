@@ -90,6 +90,8 @@ test('publish renders a GIF and lists the piece in the public gallery', async ({
   await titleBox.fill(title)
   await titleBox.press('Enter')
 
+  await ada.page.waitForTimeout(1500)
+  await ada.page.screenshot({ path: '.deepspace/test-results/koi-editor.png' })
   await ada.page.getByRole('button', { name: 'Publish' }).click()
   await expect(ada.page.getByRole('button', { name: 'In gallery' })).toBeVisible({ timeout: 60_000 })
 

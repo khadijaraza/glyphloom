@@ -9,7 +9,11 @@
 1. **Create** (`/create`): type a prompt → `openai/generate-image` paints **4 versions** → pick one. Or upload an image, or use the free procedural demo scene.
 2. **Choreograph:** the client samples the image into a cell grid and summarizes its color regions (hue, brightness and vertical position stats). That summary, a 512 px thumbnail and the prompt go to `anthropic/chat-completion`, which returns a **recipe**: which effects to apply, to which region (mask), and how strongly.
 3. **Tweak** (`/p/:id`): every recipe number is a slider. "Refine with words" ("slower lanterns, warmer orange") asks Claude for a **small JSON patch** to the current recipe, so nothing regenerates. Undo is available.
-4. **Send:** pick a person on Glyphloom (their inbox updates live) or enter an email (an invite link via `email/send`). Recipients become collaborators and **co-tweak in real time**, with presence showing who's holding which slider. Anyone can **Remix** a copy. Export as a text frame (Markdown code block), PNG, or a 6-second WebM.
+4. **Objects, not just scenes:** "Object, no background" mode prompts for an isolated subject. **Remove background** blanks out cells that match the image's border color, so the subject floats on its own. **Bob** and **Drift** move the whole subject (mask `{ subject: true }`). There's a free koi demo.
+5. **Send:** pick a person on Glyphloom (their inbox updates live) or enter an email (an invite link via `email/send`). Recipients become collaborators and **co-tweak in real time**, with presence showing who's holding which slider. Anyone can **Remix** a copy. Export as a text frame (Markdown code block), PNG, a **looping GIF**, or a 6-second WebM.
+6. **Gallery** (`/gallery`, no sign-in needed): owners **Publish** a piece, which renders a GIF and lists it publicly with their name.
+
+**Moving pictures in Gmail.** Email clients won't run the renderer and strip video, but they play animated GIFs inline. Sending by email renders 3 seconds of the piece to a GIF in the browser (`gifenc`, one shared palette so colors don't flicker), stores it publicly in R2, and embeds it in the invite. The server builds the image URL from a validated key, never from a client-supplied URL. The gallery reuses the same GIFs as thumbnails, so a page of 30 animations costs no rendering.
 
 ## How it's built
 
@@ -21,7 +25,7 @@
 | Live co-tweaking | Record-bound Yjs doc (`useYjsField('pieces', id, 'live')`); write access follows the piece's `update: 'collaborator'` | `src/lib/useLiveRecipe.ts` |
 | Who's here / who's holding a slider | Yjs awareness on the same socket | `useLiveRecipe.ts` |
 | Owner-billed AI + email, ownership checks, spend caps | Server actions (`tools.integration`, RBAC-bypassing writes after explicit checks) | `src/actions/index.ts` |
-| Source images | R2 via `useR2Files({ scope: 'app' })` / `appFiles` in the worker | `create.tsx`, `actions/index.ts` |
+| Source images, GIFs | R2 via `useR2Files({ scope: 'app' })` / `appFiles` in the worker | `create.tsx`, `actions/index.ts` |
 | Sign-in | DeepSpace auth (`AuthGate`, `AuthOverlay`) | `src/pages/(app)/(protected)/` |
 
 The renderer (`src/ascii/engine.ts`) is plain canvas-2D code with no dependencies. It samples the image to a grid, grades it (contrast, saturation, hue rotation, shadow lift), computes soft **masks** (by brightness, hue, saturation and vertical band), and runs eight effects per frame: `glow`, `rise`, `sway`, `wind`, `shimmer`, `sparkle`, `cycle` and `breathe`. Moving effects (`rise`, `wind`) translate the masked region and fill the hole it leaves with a per-row background estimate. The "Mosaic" style (solid cells with sparse glyphs, plus a faint grid) takes its visual ideas from [ascii-animals](https://github.com/DesignerStephen1/ascii-animals) (MIT). No code was copied.
@@ -32,7 +36,7 @@ The renderer (`src/ascii/engine.ts`) is plain canvas-2D code with no dependencie
 |---|---|
 | `anthropic/chat-completion` | The main feature: it decides *what moves and how*, and turns "make it warmer" into a precise edit. |
 | `openai/generate-image` (`n: 4`) | Text-to-scene in one call, giving the "pick from four" moment. The prompt is steered toward high contrast and strong silhouettes, because that's what reads well as ASCII. |
-| `email/send` | Sharing with people who aren't on the app yet, using a one-time invite link. |
+| `email/send` | Sharing with people who aren't on the app yet: a one-time invite link plus the piece as an inline animated GIF. |
 | R2 file storage | Uploaded and generated source images. |
 
 **Left out on purpose:** Slack (duplicates email for this audience), ElevenLabs or speech (adds nothing to visual art), the GitHub integration (read-only, so it can't "post to code"; the Markdown/text export covers that), and `gemini/generate-image` (a second image provider adds cost without a new capability).
@@ -47,6 +51,7 @@ The renderer (`src/ascii/engine.ts`) is plain canvas-2D code with no dependencie
 A validated JSON recipe (zod, checked on the server before it leaves the worker) is safe and small to share. It also maps 1:1 to sliders and splits into per-field Yjs entries, so two people dragging different sliders never clobber each other. The cost is range: Glyphloom can only do what its eight effects can express.
 
 Smaller calls:
+- **Gallery publishing is owner-only in the UI**, but RBAC can't restrict single fields, so a collaborator could technically flip `inGallery` with a raw write. Moving publish into a server action would close that.
 - **Masks are color statistics, not segmentation.** They're cheap, deterministic and editable, but they can't isolate "the girl" from "the sky" when the two share colors.
 - **Source images live in the public R2 scope**, so link-shared pieces load for signed-out viewers. Don't upload anything private.
 - **Spend control** is a per-user daily cap in a server-written ledger (`generations`), because the owner pays for every call.
@@ -58,7 +63,7 @@ npm install
 npx deepspace auth login
 npx deepspace dev start                 # http://localhost:5173
 npx deepspace test run                  # smoke + api
-npx deepspace test run tests/sharing.spec.ts   # 3-user sharing/RBAC/co-tweak spec (needs 3 test accounts)
+npx deepspace test run tests/sharing.spec.ts   # 3-user sharing/RBAC/co-tweak + publish/GIF/gallery (needs 3 test accounts)
 npx deepspace deploy
 ```
 
@@ -66,6 +71,7 @@ npx deepspace deploy
 
 - **"Export as standalone code"** (an HTML file with the renderer plus the recipe) is designed but not built. Text, PNG and WebM export work.
 - **Version history** is an in-memory undo stack per session, not saved snapshots or an A/B compare.
+- **Background removal is color-based** (it matches the border color). It works well for "subject on a plain background" and poorly for busy photos. Real segmentation would need a model call.
 - **Masks can't be edited by hand** in the UI (only by the AI or by refine). The next step would be click-to-select a region on the canvas, deriving the mask from the clicked cell's color.
 - **Performance:** about 13k cells redrawn with `fillText` at ~40 fps is fine on a laptop. Phones would want a glyph atlas or WebGL.
 - **Inbox thumbnails** load their source image each, which is fine for tens of pieces but not hundreds.
