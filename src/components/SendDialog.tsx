@@ -77,7 +77,7 @@ export function SendDialog({ pieceId, open, onClose }: { pieceId: string; open: 
                 {u.imageUrl ? (
                   <img src={u.imageUrl} alt="" referrerPolicy="no-referrer" className="h-6 w-6 rounded-full" />
                 ) : (
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary text-[11px]">{u.name?.[0] ?? '?'}</span>
+                  <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary text-[11px]">{u.name?.[0] ?? '?'}</span>
                 )}
                 {u.name || 'Unnamed'}
               </button>

@@ -1,6 +1,6 @@
 /** Inbox: pieces people sent you (live), and what you've sent. */
 
-import { useAuth, useQuery } from 'deepspace'
+import { useAuth, useQuery, useUserLookup } from 'deepspace'
 import { PieceCard } from '../../../components/PieceCard'
 import type { Recipe } from '../../../ascii/recipe'
 
@@ -17,6 +17,7 @@ const ago = (iso: string) => {
 
 export default function InboxPage() {
   const { userId } = useAuth()
+  const { getName } = useUserLookup()
   const { records: sends, status } = useQuery<SendData>('sends', { orderBy: 'createdAt', orderDir: 'desc' })
   const { records: pieces } = useQuery<PieceData>('pieces')
   const pieceById = new Map(pieces.map((p) => [p.recordId, p]))
@@ -70,7 +71,7 @@ export default function InboxPage() {
             <li key={s.recordId} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
               <span className="truncate text-foreground">“{s.data.pieceTitle}”</span>
               <span className="shrink-0 text-xs text-muted-foreground">
-                to {s.data.toEmail || 'a friend'} · {s.data.seenAt ? 'opened' : 'not opened yet'} · {ago(s.createdAt)}
+                to {s.data.toEmail || (s.data.toUserId && getName(s.data.toUserId)) || 'a friend'} · {s.data.seenAt ? 'opened' : 'not opened yet'} · {ago(s.createdAt)}
               </span>
             </li>
           ))}

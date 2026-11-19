@@ -28,11 +28,18 @@ export function AsciiCanvas({ image, recipe, highlight = null, still = false, cl
     const canvas = canvasRef.current!
     const engine = new AsciiEngine(canvas, recipe)
     engineRef.current = engine
-    const ro = new ResizeObserver(([entry]) => engine.setWidth(entry.contentRect.width))
+    // Resize on the next frame: setting the canvas height inside the observer
+    // callback would retrigger it ("ResizeObserver loop" warning).
+    let raf = 0
+    const ro = new ResizeObserver(([entry]) => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => engine.setWidth(entry.contentRect.width))
+    })
     ro.observe(wrapRef.current!)
     onEngine?.(engine, canvas)
     return () => {
       ro.disconnect()
+      cancelAnimationFrame(raf)
       engine.stop()
       engineRef.current = null
       onEngine?.(null, null)
