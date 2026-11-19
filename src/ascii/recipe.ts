@@ -21,6 +21,8 @@ export const EFFECT_KINDS = [
   'sparkle', // random cells flash bright: stars, snow, magic dust
   'cycle', // glyphs rotate through the ramp: rain, data, static
   'breathe', // slow brightness/scale breathing of the whole mask: sky, aura
+  'bob', // masked region floats up and down in place: a creature, a balloon, a boat
+  'drift', // masked region travels across the frame and loops, bobbing: fish, birds, jellyfish
 ] as const
 export type EffectKind = (typeof EFFECT_KINDS)[number]
 
@@ -33,6 +35,8 @@ export const EFFECT_INFO: Record<EffectKind, { label: string; hint: string }> = 
   sparkle: { label: 'Sparkle', hint: 'Random cells flash.' },
   cycle: { label: 'Cycle', hint: 'Characters flicker through the ramp.' },
   breathe: { label: 'Breathe', hint: 'Slow brightness swell.' },
+  bob: { label: 'Bob', hint: 'Floats up and down in place.' },
+  drift: { label: 'Drift', hint: 'Travels across and loops around.' },
 }
 
 export const GLYPH_SETS = {
@@ -55,6 +59,8 @@ export const maskSchema = z.object({
   sat: range01.optional(),
   /** Vertical band, 0 = top, 1 = bottom. */
   y: range01.optional(),
+  /** Only the subject, i.e. cells the background cutout keeps (needs `cutout` > 0). */
+  subject: z.boolean().optional(),
 })
 export type Mask = z.infer<typeof maskSchema>
 
@@ -89,6 +95,11 @@ export const recipeSchema = z.object({
   brightness: z.number().min(-0.5).max(0.5).default(0),
   saturation: z.number().min(0).max(2).default(1.1),
   hueShift: z.number().min(-180).max(180).default(0),
+  /**
+   * Background removal, 0 = off. Cells close in color to the image's border
+   * (or very dark) become empty, so an object floats on its own.
+   */
+  cutout: z.number().min(0).max(1).default(0),
   /** Opacity of the faint cell grid behind the art, 0 = off. */
   grid: z.number().min(0).max(1).default(0.35),
   /** Global playback speed multiplier. */
@@ -148,6 +159,7 @@ export const GLOBAL_SLIDERS = [
   { key: 'hueShift', label: 'Hue shift (°)', min: -180, max: 180, step: 1 },
   { key: 'tempo', label: 'Tempo', min: 0, max: 3, step: 0.01 },
   { key: 'grid', label: 'Grid', min: 0, max: 1, step: 0.01 },
+  { key: 'cutout', label: 'Remove background', min: 0, max: 1, step: 0.01 },
 ] as const satisfies ReadonlyArray<{ key: keyof Recipe; label: string; min: number; max: number; step: number }>
 
 export const EFFECT_SLIDERS = [

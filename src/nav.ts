@@ -19,5 +19,6 @@ export const nav: NavItem[] = [
   { path: '/home', label: 'Studio' },
   { path: '/create', label: 'Create' },
   { path: '/inbox', label: 'Inbox' },
+  { path: '/gallery', label: 'Gallery' },
   // ── Features add nav items below this line ──
 ]

@@ -59,8 +59,8 @@ export default function Landing() {
               <Link to="/create" className="inline-flex items-center rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90">
                 Make one
               </Link>
-              <Link to="/home" className="inline-flex items-center rounded-full border border-border px-5 py-2.5 text-sm text-foreground hover:bg-accent">
-                Your studio
+              <Link to="/gallery" className="inline-flex items-center rounded-full border border-border px-5 py-2.5 text-sm text-foreground hover:bg-accent">
+                See the gallery
               </Link>
             </div>
           </div>

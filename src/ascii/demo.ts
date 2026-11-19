@@ -122,3 +122,76 @@ export const PREVIEW_RECIPE: Recipe = parseRecipe({
     { id: 'breathe', kind: 'breathe', label: 'Ambience', mask: {}, speed: 0.6, intensity: 0.25 },
   ],
 })
+
+/** A koi on black: the free "object mode" demo. */
+export function paintKoi(w = 900, h = 600): HTMLCanvasElement {
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, w, h)
+  const cx = w * 0.46
+  const cy = h * 0.5
+  // tail
+  ctx.fillStyle = '#ff7a2e'
+  ctx.beginPath()
+  ctx.moveTo(cx - 210, cy)
+  ctx.quadraticCurveTo(cx - 330, cy - 120, cx - 360, cy - 70)
+  ctx.quadraticCurveTo(cx - 300, cy, cx - 360, cy + 70)
+  ctx.quadraticCurveTo(cx - 330, cy + 120, cx - 210, cy)
+  ctx.fill()
+  // fins
+  ctx.fillStyle = '#ffb07a'
+  for (const s of [-1, 1]) {
+    ctx.beginPath()
+    ctx.ellipse(cx + 40, cy + s * 70, 70, 26, s * 0.7, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  // body
+  const body = ctx.createLinearGradient(cx, cy - 90, cx, cy + 90)
+  body.addColorStop(0, '#ff9a3c')
+  body.addColorStop(0.5, '#ffe2c2')
+  body.addColorStop(1, '#ff8a2b')
+  ctx.fillStyle = body
+  ctx.beginPath()
+  ctx.ellipse(cx, cy, 230, 88, 0, 0, Math.PI * 2)
+  ctx.fill()
+  // spots
+  ctx.fillStyle = '#e8322a'
+  for (const [dx, dy, r] of [[-60, -30, 38], [40, 20, 30], [120, -20, 26], [-130, 25, 22]] as const) {
+    ctx.beginPath()
+    ctx.arc(cx + dx, cy + dy, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  // eye
+  ctx.fillStyle = '#111'
+  ctx.beginPath()
+  ctx.arc(cx + 185, cy - 22, 9, 0, Math.PI * 2)
+  ctx.fill()
+  return c
+}
+
+export const DEMO_OBJECT_RECIPE: Recipe = parseRecipe({
+  title: 'Koi',
+  cols: 80,
+  glyphs: 'classic',
+  cellStyle: 'tile',
+  cutout: 0.35,
+  grid: 0.5,
+  contrast: 1.1,
+  saturation: 1.2,
+  effects: [
+    { id: 'koi-drift', kind: 'drift', label: 'Koi', mask: { subject: true }, speed: 0.5, intensity: 0.35, scale: 1 },
+    { id: 'koi-shimmer', kind: 'glow', label: 'Scales', mask: { subject: true, lum: [0.6, 1] }, speed: 1.2, intensity: 0.35, scale: 0.6 },
+  ],
+})
+
+export const PREVIEW_OBJECT_RECIPE: Recipe = parseRecipe({
+  cols: 80,
+  cellStyle: 'tile',
+  cutout: 0.35,
+  grid: 0.5,
+  saturation: 1.15,
+  effects: [{ id: 'bob', kind: 'bob', label: 'Subject', mask: { subject: true }, speed: 0.8, intensity: 0.4 }],
+})

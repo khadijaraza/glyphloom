@@ -7,7 +7,7 @@ import { Button, Input, Modal, Textarea, useToast } from '@/components/ui'
 import { api } from '../lib/actions'
 import { cn } from '../lib/utils'
 
-export function SendDialog({ pieceId, open, onClose }: { pieceId: string; open: boolean; onClose: () => void }) {
+export function SendDialog({ pieceId, open, onClose, makeGif }: { pieceId: string; open: boolean; onClose: () => void; makeGif: () => Promise<string> }) {
   const { userId } = useAuth()
   const { user } = useUser()
   const { users } = useUsers()
@@ -31,7 +31,10 @@ export function SendDialog({ pieceId, open, onClose }: { pieceId: string; open: 
     if (sending || (!toUserId && !email.trim())) return
     setSending(true)
     try {
+      // Email can't run the live renderer, so attach a looping GIF that plays inline in Gmail.
+      const gifKey = email.trim() ? await makeGif() : undefined
       await api.sendPiece({
+        gifKey,
         pieceId,
         toUserId: toUserId ?? undefined,
         toEmail: email.trim() || undefined,
@@ -86,7 +89,7 @@ export function SendDialog({ pieceId, open, onClose }: { pieceId: string; open: 
         </div>
 
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">…or by email</label>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">…or by email (a moving GIF plays right in the email)</label>
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="friend@example.com" />
         </div>
 

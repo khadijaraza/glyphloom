@@ -12,12 +12,12 @@ import { AsciiCanvas } from '../../../components/AsciiCanvas'
 import { Button, Textarea, useToast } from '@/components/ui'
 import { describeGrid, sampleImage } from '../../../ascii/engine'
 import { loadImage, thumbnailBase64 } from '../../../ascii/image'
-import { DEMO_RECIPE, paintLanternScene, PREVIEW_RECIPE } from '../../../ascii/demo'
+import { DEMO_OBJECT_RECIPE, DEMO_RECIPE, paintKoi, paintLanternScene, PREVIEW_OBJECT_RECIPE, PREVIEW_RECIPE } from '../../../ascii/demo'
 import type { Recipe } from '../../../ascii/recipe'
 import { api } from '../../../lib/actions'
 import { cn } from '../../../lib/utils'
 
-type Candidate = { key: string | null; image: CanvasImageSource & { width: number; height: number }; demo?: boolean }
+type Candidate = { key: string | null; image: CanvasImageSource & { width: number; height: number }; demo?: Recipe }
 type PieceData = {
   title: string
   prompt: string
@@ -28,12 +28,21 @@ type PieceData = {
   forkedFrom: string
 }
 
-const EXAMPLES = [
-  'Hundreds of floating paper lanterns rising over a dark lake at night',
-  'A Ghibli-esque hillside meadow, tall grass in the wind, big drifting clouds',
-  'A koi pond at dusk in gentle rain, lily pads and glowing fish',
-  'A lone campfire in a desert under a sky full of stars',
-]
+const EXAMPLES = {
+  scene: [
+    'Hundreds of floating paper lanterns rising over a dark lake at night',
+    'A Ghibli-esque hillside meadow, tall grass in the wind, big drifting clouds',
+    'A koi pond at dusk in gentle rain, lily pads and glowing fish',
+    'A lone campfire in a desert under a sky full of stars',
+  ],
+  object: [
+    'A glowing pink jellyfish with long trailing tentacles',
+    'A tiny paper crane in flight',
+    'A green sea turtle swimming',
+    'A single paper lantern with a warm flame',
+  ],
+}
+type Mode = keyof typeof EXAMPLES
 
 export default function CreatePage() {
   const navigate = useNavigate()
@@ -43,6 +52,7 @@ export default function CreatePage() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [prompt, setPrompt] = useState('')
+  const [mode, setMode] = useState<Mode>('scene')
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [picked, setPicked] = useState<number | null>(null)
   const [phase, setPhase] = useState<'idle' | 'generating' | 'uploading' | 'choreographing'>('idle')
@@ -55,7 +65,7 @@ export default function CreatePage() {
     setCandidates([])
     setPicked(null)
     try {
-      const { keys } = await api.generateSources(prompt.trim())
+      const { keys } = await api.generateSources(prompt.trim(), mode)
       const imgs = await Promise.all(keys.map((k) => loadImage(getUrl(k)).then((image) => ({ key: k, image }))))
       setCandidates(imgs)
     } catch (e) {
@@ -84,10 +94,11 @@ export default function CreatePage() {
   }
 
   function useDemo() {
-    const image = paintLanternScene()
-    setCandidates([{ key: null, image, demo: true }])
+    const object = mode === 'object'
+    const image = object ? paintKoi() : paintLanternScene()
+    setCandidates([{ key: null, image, demo: object ? DEMO_OBJECT_RECIPE : DEMO_RECIPE }])
     setPicked(0)
-    setPrompt((p) => p || 'Floating lanterns over a lake at night')
+    setPrompt((p) => p || (object ? 'A koi drifting by' : 'Floating lanterns over a lake at night'))
   }
 
   async function animate() {
@@ -100,14 +111,14 @@ export default function CreatePage() {
       if (cand.demo) {
         // The demo scene ships with a hand-tuned recipe: no AI call needed.
         const blob = await new Promise<Blob>((res) => (cand.image as HTMLCanvasElement).toBlob((b) => res(b!), 'image/png'))
-        const up = await upload(blob, 'lantern-demo.png')
+        const up = await upload(blob, 'demo.png')
         if (!up.success || !up.key) throw new Error(up.error ?? 'Upload failed')
         sourceKey = up.key
-        recipe = DEMO_RECIPE
+        recipe = cand.demo
       } else {
         const grid = sampleImage(cand.image, 110, 'glyph')
         const thumb = cand.image instanceof HTMLImageElement ? thumbnailBase64(cand.image) : null
-        recipe = (await api.buildRecipe(prompt, describeGrid(grid), thumb)).recipe
+        recipe = (await api.buildRecipe(prompt, describeGrid(grid), thumb, mode)).recipe
       }
       const id = await createConfirmed({
         title: recipe.title || prompt.slice(0, 60) || 'Untitled',
@@ -134,11 +145,28 @@ export default function CreatePage() {
         too: “lanterns drifting up”, “grass bending in the wind”.
       </p>
 
-      <div className="mt-6 rounded-xl border border-border bg-card p-4">
+      <div className="mt-6 inline-flex rounded-full border border-border p-1" role="tablist" aria-label="What are you making?">
+        {(['scene', 'object'] as const).map((m) => (
+          <button
+            key={m}
+            role="tab"
+            aria-selected={mode === m}
+            onClick={() => !busy && setMode(m)}
+            className={cn(
+              'rounded-full px-4 py-1.5 text-sm transition-colors',
+              mode === m ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {m === 'scene' ? 'Scene' : 'Object, no background'}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-3 rounded-xl border border-border bg-card p-4">
         <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Floating lanterns over a lake at night, warm orange glow, stars…"
+          placeholder={mode === 'scene' ? 'Floating lanterns over a lake at night, warm orange glow, stars…' : 'A jellyfish that pulses and drifts…'}
           rows={3}
           maxLength={600}
           className="resize-none border-0 bg-transparent p-1 text-base shadow-none focus-visible:ring-0"
@@ -157,11 +185,11 @@ export default function CreatePage() {
           </Button>
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => onFile(e.target.files?.[0])} />
           <Button variant="ghost" onClick={useDemo} disabled={busy}>
-            Try the demo scene
+            {mode === 'scene' ? 'Try the demo scene' : 'Try the demo koi'}
           </Button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          {EXAMPLES.map((ex) => (
+          {EXAMPLES[mode].map((ex) => (
             <button
               key={ex}
               onClick={() => setPrompt(ex)}
@@ -194,7 +222,7 @@ export default function CreatePage() {
                   picked === i ? 'border-primary ring-2 ring-primary/40' : 'border-border hover:border-foreground/25',
                 )}
               >
-                <AsciiCanvas image={c.image} recipe={c.demo ? DEMO_RECIPE : PREVIEW_RECIPE} />
+                <AsciiCanvas image={c.image} recipe={c.demo ?? (mode === 'object' ? PREVIEW_OBJECT_RECIPE : PREVIEW_RECIPE)} />
                 <span className="absolute left-3 top-3 rounded-full bg-black/60 px-2 py-0.5 font-mono text-[11px] text-foreground">
                   {String.fromCharCode(65 + i)}
                 </span>

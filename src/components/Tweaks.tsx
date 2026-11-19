@@ -44,6 +44,8 @@ const DEFAULT_MASKS: Record<EffectKind, Mask> = {
   sparkle: { lum: [0.55, 1] },
   cycle: {},
   breathe: {},
+  bob: { subject: true },
+  drift: { subject: true },
 }
 
 export function Tweaks({ recipe, canWrite, peers, onGlobal, onEffect, onReplace, onHold, onHighlight, onRefine }: Props) {
@@ -226,6 +228,7 @@ function describeMask(m: Mask) {
   if (m.hue) parts.push(`hue ${m.hue[0]}–${m.hue[1]}°`)
   if (m.lum) parts.push(`bright ${m.lum[0].toFixed(2)}–${m.lum[1].toFixed(2)}`)
   if (m.sat) parts.push(`sat ${m.sat[0].toFixed(2)}–${m.sat[1].toFixed(2)}`)
+  if (m.subject) parts.push('subject only')
   if (m.y) parts.push(m.y[0] <= 0.02 ? `top ${Math.round(m.y[1] * 100)}%` : m.y[1] >= 0.98 ? `bottom ${Math.round((1 - m.y[0]) * 100)}%` : `band ${Math.round(m.y[0] * 100)}–${Math.round(m.y[1] * 100)}%`)
   return parts.length ? parts.join(', ') : 'whole image'
 }

@@ -102,11 +102,12 @@ function inHue(h: number, [a, b]: [number, number], soft = 12) {
 }
 
 /** Soft 0–1 membership of each cell in a mask. An empty mask selects everything. */
-export function maskWeights(grid: SourceGrid, mask: Mask): Float32Array {
+export function maskWeights(grid: SourceGrid, mask: Mask, keep?: Float32Array | null): Float32Array {
   const n = grid.cols * grid.rows
   const out = new Float32Array(n)
   for (let i = 0; i < n; i++) {
     let w = 1
+    if (mask.subject && keep) w *= keep[i]
     if (mask.lum) w *= inRange(grid.lum[i], mask.lum)
     if (mask.sat) w *= inRange(grid.sat[i], mask.sat)
     if (mask.hue) w *= inHue(grid.hue[i], mask.hue) * smooth(0.06, 0.18, grid.sat[i])
@@ -143,6 +144,31 @@ function css(r: number, g: number, b: number) {
   return s
 }
 
+/**
+ * Soft "keep" weight per cell for background removal: 1 = subject, 0 = background.
+ * The background color is the median of the border cells; cells close to it,
+ * or very dark, are dropped. `amount` widens the tolerance.
+ */
+export function cutoutWeights(grid: SourceGrid, amount: number): Float32Array {
+  const { cols, rows } = grid
+  const border: number[] = []
+  for (let x = 0; x < cols; x++) border.push(x, (rows - 1) * cols + x)
+  for (let y = 0; y < rows; y++) border.push(y * cols, y * cols + cols - 1)
+  const med = (arr: Float32Array) => {
+    const v = border.map((i) => arr[i]).sort((a, b) => a - b)
+    return v[v.length >> 1]
+  }
+  const br = med(grid.r), bg = med(grid.g), bb = med(grid.b)
+  const tol = 0.04 + amount * 0.42
+  const dark = amount * 0.22
+  const out = new Float32Array(cols * rows)
+  for (let i = 0; i < out.length; i++) {
+    const d = Math.hypot(grid.r[i] - br, grid.g[i] - bg, grid.b[i] - bb)
+    out[i] = smooth(tol * 0.7, tol * 1.3, d) * smooth(dark * 0.6, dark * 1.4 + 0.001, grid.lum[i])
+  }
+  return out
+}
+
 interface PreparedEffect {
   effect: Effect
   weights: Float32Array
@@ -166,6 +192,10 @@ export class AsciiEngine {
   private grid: SourceGrid | null = null
   private graded: Graded | null = null
   private effects: PreparedEffect[] = []
+  /** Background-cutout keep weights, or null when cutout is off. */
+  private keep: Float32Array | null = null
+  /** Fixed device-pixel ratio (GIF capture); null follows the screen. */
+  private fixedDpr: number | null = null
   private gridKey = ''
   private highlight: string | null = null
   private raf = 0
@@ -176,11 +206,15 @@ export class AsciiEngine {
   private lastGlyphs: string[] = []
   paused = false
 
-  constructor(canvas: HTMLCanvasElement, recipe: Recipe) {
+  constructor(canvas: HTMLCanvasElement, recipe: Recipe, opts: { dpr?: number; maxCols?: boolean } = {}) {
     this.canvas = canvas
-    this.ctx = canvas.getContext('2d', { alpha: false })!
+    this.ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: opts.dpr !== undefined })!
     this.recipe = recipe
+    this.fixedDpr = opts.dpr ?? null
+    this.capCols = opts.maxCols !== false
   }
+
+  private capCols: boolean
 
   setImage(img: CanvasImageSource & { width: number; height: number }) {
     this.image = img
@@ -236,7 +270,7 @@ export class AsciiEngine {
   }
 
   private effectiveCols() {
-    if (!this.cssWidth) return this.recipe.cols
+    if (!this.cssWidth || !this.capCols) return this.recipe.cols
     return Math.max(32, Math.min(this.recipe.cols, Math.floor(this.cssWidth / 6.5)))
   }
 
@@ -251,12 +285,13 @@ export class AsciiEngine {
     }
     const grid = this.grid!
     this.graded = grade(grid, this.recipe)
+    this.keep = this.recipe.cutout > 0 ? cutoutWeights(grid, this.recipe.cutout) : null
     this.effects = this.recipe.effects
       .filter((e) => e.enabled)
       .map((effect) => {
-        const weights = maskWeights(grid, effect.mask)
+        const weights = maskWeights(grid, effect.mask, this.keep)
         const p: PreparedEffect = { effect, weights }
-        if (effect.kind === 'rise' || effect.kind === 'wind') p.fill = rowFill(grid, this.graded!, weights)
+        if (isMover(effect.kind)) p.fill = rowFill(grid, this.graded!, weights)
         return p
       })
     // Moving effects decide *which* cell shows, so they run before the rest.
@@ -266,7 +301,7 @@ export class AsciiEngine {
 
   private resize() {
     if (!this.grid || !this.cssWidth) return
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    const dpr = this.fixedDpr ?? Math.min(2, window.devicePixelRatio || 1)
     const cw = this.cssWidth / this.grid.cols
     const ch = cw / CELL_ASPECT[this.recipe.cellStyle]
     const cssHeight = Math.round(ch * this.grid.rows)
@@ -333,17 +368,29 @@ export class AsciiEngine {
           const k = e.intensity
           switch (e.kind) {
             case 'rise':
-            case 'wind': {
+            case 'wind':
+            case 'bob':
+            case 'drift': {
               if (fillRgb === null && src !== y * cols + x) break // another mover already claimed it
-              const rise = e.kind === 'rise'
-              const span = rise ? rows : cols
-              // The whole masked layer moves as one sheet: per-band speeds tore objects apart.
-              // `scale` adds a gentle lateral wobble instead, so it reads as floating.
-              const v = sp * (2 + 10 * k)
-              const wobble = rise ? Math.round(Math.sin(time * sp * 0.7 + y * 0.15) * e.scale * 0.8) : 0
-              const shift = ((time * v) % span + span) % span
-              const sx = rise ? Math.min(cols - 1, Math.max(0, x + wobble)) : Math.floor((x - shift + span * 2) % span)
-              const sy = rise ? Math.floor((y + shift) % span) : y
+              // Each mover maps this cell to the source cell whose content should appear here.
+              // The whole masked layer moves as one sheet (per-band speeds tore objects apart).
+              let sx = x
+              let sy = y
+              if (e.kind === 'rise') {
+                const shift = (((time * sp * (2 + 10 * k)) % rows) + rows) % rows
+                sy = Math.floor((y + shift) % rows)
+                sx = Math.min(cols - 1, Math.max(0, x + Math.round(Math.sin(time * sp * 0.7 + y * 0.15) * e.scale * 0.8)))
+              } else if (e.kind === 'wind') {
+                const shift = (((time * sp * (2 + 10 * k)) % cols) + cols) % cols
+                sx = Math.floor((x - shift + cols * 2) % cols)
+              } else if (e.kind === 'bob') {
+                sy = Math.min(rows - 1, Math.max(0, y + Math.round(Math.sin(time * sp * 1.4) * (1 + k * 4) * e.scale)))
+                sx = Math.min(cols - 1, Math.max(0, x + Math.round(Math.sin(time * sp * 0.7) * k * 1.5)))
+              } else {
+                const shift = (((time * sp * (1.5 + 6 * k)) % cols) + cols) % cols
+                sx = Math.floor((x - shift + cols * 2) % cols)
+                sy = Math.min(rows - 1, Math.max(0, y + Math.round(Math.sin(time * sp * 1.2 + x * 0.05) * (1 + k * 2.5) * e.scale)))
+              }
               const cand = sy * cols + sx
               if (p.weights[cand] > 0.5) {
                 src = cand
@@ -351,7 +398,7 @@ export class AsciiEngine {
               } else if (p.weights[y * cols + x] > 0.2) {
                 // Fill the soft edge too, or a faint outline stays behind where the object was.
                 const f = p.fill!
-                fillRgb = [f[y * 3], f[y * 3 + 1], f[y * 3 + 2]]
+                fillRgb = this.keep ? EMPTY : [f[y * 3], f[y * 3 + 1], f[y * 3 + 2]]
               }
               break
             }
@@ -410,6 +457,15 @@ export class AsciiEngine {
           src = Math.floor(src / cols) * cols + sx
         }
 
+        // Background removed: leave the cell empty (only the grid shows).
+        if (fillRgb === EMPTY || (this.keep && fillRgb === null && this.keep[src] < 0.5)) {
+          glyphs[y * cols + x] = ' '
+          if (highlight && highlight.weights[y * cols + x] > 0.15) {
+            ctx.fillStyle = `rgba(255,64,160,${0.45 * highlight.weights[y * cols + x]})`
+            ctx.fillRect(x * cw, y * ch, cw, ch)
+          }
+          continue
+        }
         let r: number, g: number, b: number, l: number
         if (fillRgb) {
           ;[r, g, b] = fillRgb
@@ -476,8 +532,14 @@ export class AsciiEngine {
   }
 }
 
+const EMPTY: [number, number, number] = [-1, -1, -1]
+
+function isMover(kind: Effect['kind']) {
+  return kind === 'rise' || kind === 'wind' || kind === 'bob' || kind === 'drift'
+}
+
 function order(kind: Effect['kind']) {
-  return kind === 'rise' || kind === 'wind' ? 0 : 1
+  return isMover(kind) ? 0 : 1
 }
 
 function grade(grid: SourceGrid, recipe: Recipe): Graded {

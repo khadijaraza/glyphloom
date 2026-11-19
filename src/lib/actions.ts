@@ -17,12 +17,12 @@ async function call<T>(name: string, body: Record<string, unknown>): Promise<T> 
 }
 
 export const api = {
-  generateSources: (prompt: string) => call<{ keys: string[] }>('generateSources', { prompt }),
-  buildRecipe: (prompt: string, summary: string, thumbnail: string | null) =>
-    call<{ recipe: Recipe }>('buildRecipe', { prompt, summary, thumbnail }),
+  generateSources: (prompt: string, mode: 'scene' | 'object' = 'scene') => call<{ keys: string[] }>('generateSources', { prompt, mode }),
+  buildRecipe: (prompt: string, summary: string, thumbnail: string | null, mode: 'scene' | 'object' = 'scene') =>
+    call<{ recipe: Recipe }>('buildRecipe', { prompt, summary, thumbnail, mode }),
   refineRecipe: (recipe: Recipe, instruction: string) =>
     call<{ recipe: Recipe; patch: Record<string, unknown> }>('refineRecipe', { recipe, instruction }),
-  sendPiece: (p: { pieceId: string; toUserId?: string; toEmail?: string; note?: string; fromName?: string }) =>
+  sendPiece: (p: { pieceId: string; toUserId?: string; toEmail?: string; note?: string; fromName?: string; gifKey?: string }) =>
     call<{ sendId: string }>('sendPiece', p),
   claimInvite: (pieceId: string, token: string) => call<{ claimed: boolean }>('claimInvite', { pieceId, token }),
 }

@@ -6,13 +6,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AuthOverlay, getUserColor, useAuth, useMutations, useQuery, useR2Files, useUser } from 'deepspace'
-import { Copy, Download, GitFork, Loader2, Send, Undo2, Video } from 'lucide-react'
+import { Copy, Download, Film, GitFork, Globe, Loader2, Send, Undo2, Video } from 'lucide-react'
 import { AsciiCanvas } from '../../../components/AsciiCanvas'
 import { SendDialog } from '../../../components/SendDialog'
 import { Tweaks } from '../../../components/Tweaks'
 import { Button, useToast } from '@/components/ui'
 import type { AsciiEngine } from '../../../ascii/engine'
 import { loadImage } from '../../../ascii/image'
+import { renderGif } from '../../../ascii/gif'
 import { safeRecipe, type Recipe } from '../../../ascii/recipe'
 import { api } from '../../../lib/actions'
 import { useLiveRecipe } from '../../../lib/useLiveRecipe'
@@ -25,6 +26,10 @@ type PieceData = {
   visibility: 'private' | 'link'
   collaborators: string[]
   forkedFrom: string
+  gifKey?: string
+  inGallery?: boolean
+  publishedAt?: string
+  authorName?: string
 }
 type SendData = { pieceId: string; toUserId: string; seenAt: string }
 
@@ -51,7 +56,7 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
   const [params, setParams] = useSearchParams()
   const { isSignedIn, userId } = useAuth()
   const { user } = useUser()
-  const { getUrl } = useR2Files({ scope: 'app' })
+  const { getUrl, upload } = useR2Files({ scope: 'app' })
   const { success, error } = useToast()
   const pieces = useMutations<PieceData>('pieces')
   const sends = useMutations<SendData>('sends')
@@ -67,6 +72,7 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
   const [sendOpen, setSendOpen] = useState(false)
   const [authOpen, setAuthOpen] = useState(false)
   const [recording, setRecording] = useState(false)
+  const [gifBusy, setGifBusy] = useState<number | null>(null)
   const engineRef = useRef<{ engine: AsciiEngine | null; canvas: HTMLCanvasElement | null }>({ engine: null, canvas: null })
 
   useEffect(() => {
@@ -178,6 +184,57 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
     setTimeout(() => rec.stop(), 6000)
   }
 
+  /** Render the current state to a GIF and store it publicly; returns its key. */
+  async function makeGif(): Promise<string> {
+    if (!image) throw new Error('Image still loading')
+    setGifBusy(0)
+    try {
+      const blob = await renderGif(image, live.recipe, {}, (p) => setGifBusy(p))
+      const up = await upload(blob, `${(piece.title || 'glyphloom').replace(/[^\w-]+/g, '-')}.gif`)
+      if (!up.success || !up.key) throw new Error(up.error ?? 'Upload failed')
+      return up.key
+    } finally {
+      setGifBusy(null)
+    }
+  }
+
+  async function downloadGif() {
+    if (!image || gifBusy !== null) return
+    setGifBusy(0)
+    try {
+      const blob = await renderGif(image, live.recipe, {}, (p) => setGifBusy(p))
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${(piece.title || 'glyphloom').replace(/[^\w-]+/g, '-')}.gif`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } finally {
+      setGifBusy(null)
+    }
+  }
+
+  async function togglePublish() {
+    if (!isOwner || gifBusy !== null) return
+    if (piece.inGallery) {
+      pieces.put(id, { inGallery: false })
+      return success('Removed from the gallery')
+    }
+    try {
+      const gifKey = await makeGif()
+      await pieces.putConfirmed(id, {
+        inGallery: true,
+        visibility: 'link',
+        gifKey,
+        publishedAt: new Date().toISOString(),
+        authorName: user?.name || 'Anonymous',
+      })
+      success('Published', 'It’s in the public gallery now.')
+    } catch (e) {
+      error('Couldn’t publish', e instanceof Error ? e.message : undefined)
+    }
+  }
+
   const isOwner = userId === ownerId
   const onEngine = useCallback((engine: AsciiEngine | null, canvas: HTMLCanvasElement | null) => {
     engineRef.current = { engine, canvas }
@@ -206,12 +263,20 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
           <Button size="sm" variant="outline" onClick={downloadPng} title="Download a PNG of this frame">
             <Download /> PNG
           </Button>
+          <Button size="sm" variant="outline" onClick={downloadGif} disabled={gifBusy !== null || !image} title="Download a looping GIF (plays in email and chat)">
+            {gifBusy !== null ? <Loader2 className="animate-spin" /> : <Film />} {gifBusy !== null ? `${Math.round(gifBusy * 100)}%` : 'GIF'}
+          </Button>
           <Button size="sm" variant="outline" onClick={recordVideo} disabled={recording} title="Record 6 seconds of video">
             {recording ? <Loader2 className="animate-spin" /> : <Video />} {recording ? 'Recording…' : 'Video'}
           </Button>
           <Button size="sm" variant="outline" onClick={remix}>
             <GitFork /> Remix
           </Button>
+          {isOwner && (
+            <Button size="sm" variant={piece.inGallery ? 'secondary' : 'outline'} onClick={togglePublish} disabled={gifBusy !== null || !image}>
+              <Globe /> {piece.inGallery ? 'In gallery' : 'Publish'}
+            </Button>
+          )}
           {live.canWrite && (
             <Button size="sm" onClick={() => setSendOpen(true)}>
               <Send /> Send
@@ -268,7 +333,7 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
         />
       </aside>
 
-      <SendDialog pieceId={id} open={sendOpen} onClose={() => setSendOpen(false)} />
+      <SendDialog pieceId={id} open={sendOpen} onClose={() => setSendOpen(false)} makeGif={makeGif} />
       {authOpen && <AuthOverlay onClose={() => setAuthOpen(false)} />}
     </div>
   )

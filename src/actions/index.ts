@@ -97,10 +97,17 @@ Effects (each: id, kind, label, enabled, mask, speed 0-3 (1=normal), intensity 0
   cycle   — characters flicker/rain (rain, data streams, static, waterfalls)
   breathe — slow brightness swell (sky, aura, glow of dusk)
 
-Global fields: title, cols (40-200, ~110 typical; lower = chunkier), glyphs (${Object.keys(GLYPH_SETS).join(' | ')}),
+Global fields: cutout (0-1 background removal, 0 = off), title, cols (40-200, ~110 typical; lower = chunkier), glyphs (${Object.keys(GLYPH_SETS).join(' | ')}),
 cellStyle ('glyph' colored characters | 'tile' mosaic: bright areas become solid colored squares with glyphs, great for creatures and bold subjects; best at cols 60-100), grid (0-1 faint cell grid), colorMode ('source' | 'mono' | 'duotone'),
 ink (#hex, used by mono/duotone), background (#hex, near-black usually), contrast 0.5-2, brightness -0.5..0.5,
 saturation 0-2, hueShift -180..180, tempo 0-3.
+
+Objects vs scenes: when the image is a single subject on a plain/black background (or the person asks for an object, creature, or "no background"),
+set cutout 0.3-0.6 so the background disappears, use mask {"subject": true} for whole-subject motion, prefer cellStyle 'tile' with cols 60-90,
+and use bob/drift for the subject itself plus small glow/sparkle accents. For full scenes keep cutout 0.
+
+  bob     — the subject floats up and down in place (creature, balloon, boat). Use mask {"subject": true}.
+  drift   — the subject travels sideways across the frame and loops while bobbing (fish, birds, jellyfish). Use mask {"subject": true}.
 
 Rules of taste:
 - 2 to 5 effects. Each effect targets one recognizable thing with a mask derived from the image summary.
@@ -126,7 +133,10 @@ export const actions: Record<string, ActionHandler<Env>> = {
       n: 4,
       size: '1536x1024',
       quality: 'low',
-      prompt: `${prompt}. Composition for ASCII art: strong silhouettes, high contrast between subject and background, clear bright light sources, rich but limited color palette, minimal fine texture, no text.`,
+      prompt:
+        params.mode === 'object'
+          ? `${prompt}. A single isolated subject, centered, filling most of the frame, on a pure flat black background. No scenery, no ground, no shadow, no text. Bold clean silhouette, bright saturated colors, simple shapes.`
+          : `${prompt}. Composition for ASCII art: strong silhouettes, high contrast between subject and background, clear bright light sources, rich but limited color palette, minimal fine texture, no text.`,
     })
     if (!r.ok) return fail(r.error)
 
@@ -163,7 +173,9 @@ export const actions: Record<string, ActionHandler<Env>> = {
     const limited = await meter(tools, userId, 'recipe')
     if (limited) return fail(limited)
 
-    const instruction = `What the person wants: ${prompt || '(no description — infer the scene from the image)'}
+    const mode = params.mode === 'object' ? 'OBJECT (isolated subject, remove the background)' : 'SCENE'
+    const instruction = `Mode: ${mode}
+What the person wants: ${prompt || '(no description — infer the scene from the image)'}
 
 Image color summary (from the actual pixels):
 ${summary}
@@ -232,6 +244,10 @@ You are now EDITING an existing recipe. Return a minimal JSON PATCH, not the who
     const toEmail = typeof params.toEmail === 'string' ? params.toEmail.trim().toLowerCase() : ''
     const note = String(params.note ?? '').slice(0, 280)
     const fromName = String(params.fromName ?? 'Someone').slice(0, 60)
+    // A GIF the client rendered and uploaded to the public scope. Only a bare
+    // key is accepted, and the URL is built here, so the email can't be made
+    // to embed an arbitrary remote image.
+    const gifKey = typeof params.gifKey === 'string' && /^[\w\-./]+\.gif$/.test(params.gifKey) && !params.gifKey.includes('..') ? params.gifKey : ''
     if (!toUserId && !toEmail) return fail('Pick a person or enter an email.')
     if (toEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toEmail)) return fail('That email looks wrong.')
     if (toUserId === userId) return fail("You can't send to yourself.")
@@ -244,7 +260,7 @@ You are now EDITING an existing recipe. Return a minimal JSON PATCH, not the who
 
     const title = piece.data.title || 'Untitled'
     const nextCollaborators = toUserId ? [...new Set([...collaborators, toUserId])] : collaborators
-    await tools.update('pieces', pieceId, { collaborators: nextCollaborators, visibility: 'link' })
+    await tools.update('pieces', pieceId, { collaborators: nextCollaborators, visibility: 'link', ...(gifKey ? { gifKey } : {}) })
 
     const inviteToken = toEmail ? crypto.randomUUID().replace(/-/g, '') : ''
     const created = await tools.create('sends', {
@@ -266,6 +282,7 @@ You are now EDITING an existing recipe. Return a minimal JSON PATCH, not the who
       if (limited) return fail(limited)
       const base = `https://${env.APP_NAME}.app.space`
       const link = `${base}/p/${pieceId}?invite=${inviteToken}`
+      const gifUrl = gifKey ? `${base}/api/files/${gifKey.split('/').map(encodeURIComponent).join('/')}?scope=app` : ''
       const safe = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]!)
       const mail = await callIntegration(tools, 'email/send', {
         from: `${fromName.replace(/[<>"]/g, '')} via Glyphloom <${env.APP_NAME}@app.space>`,
@@ -276,6 +293,7 @@ You are now EDITING an existing recipe. Return a minimal JSON PATCH, not the who
 <h1 style="margin:0 0 16px;font-size:22px">${safe(fromName)} sent you a moving ASCII piece</h1>
 <p style="margin:0 0 8px">“${safe(title)}”</p>
 ${note ? `<p style="margin:0 0 20px;color:#cfc3a8">${safe(note)}</p>` : ''}
+${gifUrl ? `<a href="${link}"><img src="${gifUrl}" alt="${safe(title)}, animated" width="520" style="display:block;max-width:100%;height:auto;border-radius:10px;margin:0 0 20px;border:1px solid #222" /></a>` : ''}
 <a href="${link}" style="display:inline-block;background:#ffb347;color:#07070c;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Watch it move →</a>
 <p style="margin:20px 0 0;color:#6b6457;font-size:12px">Sign in on the page to tweak it together live.</p></div>`,
         text: `${fromName} sent you “${title}”. ${note}\n\nWatch it: ${link}`,

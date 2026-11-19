@@ -72,3 +72,36 @@ test('send → live inbox → co-tweak, and outsiders stay out', async ({ users 
   await expect(cy.page.getByRole('slider', { name: 'Tempo', exact: true })).toBeDisabled()
   await expect(cy.page.getByRole('button', { name: 'Send', exact: true })).toHaveCount(0)
 })
+
+test('publish renders a GIF and lists the piece in the public gallery', async ({ users, browser }) => {
+  test.setTimeout(120_000)
+  const [ada] = await users(['Ada'])
+
+  // Object mode: the free koi demo (background removed, drifting).
+  await ada.page.goto('/create')
+  await ada.page.getByRole('tab', { name: 'Object, no background' }).click()
+  await ada.page.getByRole('button', { name: 'Try the demo koi' }).click()
+  await ada.page.getByRole('button', { name: 'Bring it to life' }).click()
+  await ada.page.waitForURL(/\/p\/[\w-]+/, { timeout: 30_000 })
+  await expect(ada.page.getByRole('slider', { name: 'Remove background', exact: true })).toHaveValue('0.35', { timeout: 20_000 })
+
+  const title = `Koi ${Date.now()}`
+  const titleBox = ada.page.getByRole('textbox', { name: 'Title' })
+  await titleBox.fill(title)
+  await titleBox.press('Enter')
+
+  await ada.page.getByRole('button', { name: 'Publish' }).click()
+  await expect(ada.page.getByRole('button', { name: 'In gallery' })).toBeVisible({ timeout: 60_000 })
+
+  // A signed-out visitor sees it in the gallery as an animated GIF.
+  const anon = await browser.newContext()
+  const page = await anon.newPage()
+  await page.goto('/gallery')
+  const img = page.getByRole('img', { name: `${title}, animated ASCII` })
+  await expect(img).toBeVisible({ timeout: 20_000 })
+  const src = await img.getAttribute('src')
+  const res = await page.request.get(src!)
+  expect(res.ok()).toBe(true)
+  expect(res.headers()['content-type']).toContain('image/gif')
+  await anon.close()
+})

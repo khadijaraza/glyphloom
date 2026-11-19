@@ -23,6 +23,13 @@ export const piecesSchema: CollectionSchema = {
     { name: 'visibility', storage: 'text', interpretation: { kind: 'select', options: ['private', 'link'] } },
     { name: 'collaborators', storage: 'text', interpretation: { kind: 'json' } },
     { name: 'forkedFrom', storage: 'text', interpretation: 'plain' },
+    /** Animated GIF render (public R2 key): email embeds and gallery thumbnails. */
+    { name: 'gifKey', storage: 'text', interpretation: 'plain' },
+    /** Opted into the public gallery. Only meaningful while visibility is 'link'. */
+    { name: 'inGallery', storage: 'number', interpretation: { kind: 'boolean' } },
+    { name: 'publishedAt', storage: 'text', interpretation: 'plain' },
+    /** Display name captured at publish time (signed-out visitors get no user roster). */
+    { name: 'authorName', storage: 'text', interpretation: 'plain' },
   ],
   visibilityField: { field: 'visibility', value: 'link' },
   collaboratorsField: 'collaborators',
