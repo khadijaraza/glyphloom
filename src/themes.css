@@ -1,0 +1,107 @@
+/*
+ * Theme overrides — applied via <html data-theme="<id>">.
+ *
+ * Default values live in `styles.css` (@theme block, slate — a neutral
+ * placeholder, not a design choice). Every app should define its OWN theme
+ * before first deploy: copy the example block below, rename the selector,
+ * and set colors that fit the product. Shape comes from `--radius`.
+ *
+ * To add a theme:
+ *   1. Add a `[data-theme="my-id"] { ... }` block overriding the shadcn
+ *      tokens below. If the theme is light, include `color-scheme: light;`
+ *      so native form controls (calendar icons, scrollbars) match.
+ *   2. Add an entry to `src/themes.ts` so it shows up in the typed catalog.
+ *   3. Add the theme's --color-background to the first-paint <style> block
+ *      in index.html so the pre-CSS frame matches (no white flash).
+ *   4. Switch to it via `data-theme` on <html> in index.html.
+ */
+
+/* Paper — light example theme; shows the full token contract incl.
+ * `color-scheme: light`. Replace or delete it once the app has its own. */
+[data-theme="paper"] {
+  color-scheme: light;
+  --color-background: #ffffff;
+  --color-foreground: #0a0a0a;
+  --color-card: #fafafa;
+  --color-card-foreground: #0a0a0a;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0a0a0a;
+  --color-primary: #171717;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f5f5f5;
+  --color-secondary-foreground: #0a0a0a;
+  --color-muted: #f5f5f5;
+  --color-muted-foreground: #525252;
+  --color-accent: #e5e5e5;
+  --color-accent-foreground: #0a0a0a;
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #e5e5e5;
+  --color-input: #e5e5e5;
+  --color-ring: #171717;
+  --shadow-card: 0 1px 2px 0 rgba(0, 0, 0, 0.016);
+  --shadow-card-hover: 0 2px 8px 0 rgba(0, 0, 0, 0.032);
+  --color-shell: #fafafa;
+  --color-shell-panel: #ffffff;
+}
+
+/* Loom — Glyphloom's own theme: ink-black night, warm lantern amber,
+ * monospace-forward. Pairs with the renderer's default #07070c background. */
+[data-theme="loom"] {
+  color-scheme: dark;
+  --color-background: #07070c;
+  --color-foreground: #efe6d2;
+  --color-card: #0e0e16;
+  --color-card-foreground: #efe6d2;
+  --color-popover: #12121c;
+  --color-popover-foreground: #efe6d2;
+  --color-primary: #ffb347;
+  --color-primary-foreground: #120c02;
+  --color-secondary: #171724;
+  --color-secondary-foreground: #efe6d2;
+  --color-muted: #151521;
+  --color-muted-foreground: #8f8877;
+  --color-accent: #1d1d2c;
+  --color-accent-foreground: #efe6d2;
+  --color-destructive: #ff5d5d;
+  --color-destructive-foreground: #ffffff;
+  --color-border: rgba(239, 230, 210, 0.09);
+  --color-input: rgba(239, 230, 210, 0.12);
+  --color-ring: #ffb347;
+  --radius: 0.7rem;
+}
+
+/* Faint dot grid behind canvases, like a cutting mat. */
+.loom-grid {
+  background-image: radial-gradient(rgba(239, 230, 210, 0.07) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+
+/* Slider styling shared by Tweaks. */
+.loom-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--color-primary) var(--fill, 50%), rgba(239, 230, 210, 0.12) var(--fill, 50%));
+  outline: none;
+}
+.loom-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #efe6d2;
+  border: 2px solid var(--color-primary);
+  cursor: grab;
+}
+.loom-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #efe6d2;
+  border: 2px solid var(--color-primary);
+  cursor: grab;
+}
+.loom-range:disabled { opacity: 0.45; }
