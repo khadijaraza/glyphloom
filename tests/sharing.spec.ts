@@ -31,9 +31,15 @@ test('send → live inbox → co-tweak, and outsiders stay out', async ({ users 
   const pieceUrl = new URL(ada.page.url()).pathname
   await expect(ada.page.getByRole('slider', { name: 'Tempo', exact: true })).toBeEnabled({ timeout: 20_000 })
 
+  // A unique title so the assertions don't depend on data from earlier runs.
+  const title = `Lanterns ${Date.now()}`
+  const titleBox = ada.page.getByRole('textbox', { name: 'Title' })
+  await titleBox.fill(title)
+  await titleBox.press('Enter')
+
   // Bo and Cy are open on their inboxes before anything is sent.
   await Promise.all([bo.page.goto('/inbox'), cy.page.goto('/inbox')])
-  await expect(bo.page.getByText('Nothing yet.')).toBeVisible({ timeout: 15_000 })
+  await expect(bo.page.getByRole('heading', { name: 'Sent to you' })).toBeVisible({ timeout: 15_000 })
 
   // Ada sends to Bo.
   await ada.page.getByRole('button', { name: 'Send', exact: true }).click()
@@ -45,9 +51,9 @@ test('send → live inbox → co-tweak, and outsiders stay out', async ({ users 
   await expect(dialog).toBeHidden({ timeout: 15_000 })
 
   // Bo's open inbox updates without a reload; Cy's does not.
-  await expect(bo.page.getByText('Lanterns over the lake')).toBeVisible({ timeout: 15_000 })
-  await expect(bo.page.getByText('“for you”')).toBeVisible()
-  await expect(cy.page.getByText('Lanterns over the lake')).toHaveCount(0)
+  await expect(bo.page.getByText(title)).toBeVisible({ timeout: 15_000 })
+  await expect(bo.page.getByText('“for you”').first()).toBeVisible()
+  await expect(cy.page.getByText(title)).toHaveCount(0)
 
   // Bo opens it and can write; Ada moves a slider and Bo sees the value change live.
   await bo.page.goto(pieceUrl)

@@ -200,7 +200,9 @@ export class AsciiEngine {
   /** Width in CSS pixels the canvas should fill. Height follows the grid. */
   setWidth(cssWidth: number) {
     this.cssWidth = Math.max(100, Math.floor(cssWidth))
-    this.resize()
+    // Narrow screens get fewer columns so glyphs stay legible.
+    if (this.effectiveCols() !== this.grid?.cols) this.prepare()
+    else this.resize()
     if (this.paused) this.draw(1.7)
   }
 
@@ -233,11 +235,17 @@ export class AsciiEngine {
     return lines.join('\n')
   }
 
+  private effectiveCols() {
+    if (!this.cssWidth) return this.recipe.cols
+    return Math.max(32, Math.min(this.recipe.cols, Math.floor(this.cssWidth / 6.5)))
+  }
+
   private prepare() {
     if (!this.image) return
-    const key = `${this.recipe.cols}:${this.recipe.cellStyle}`
+    const cols = this.effectiveCols()
+    const key = `${cols}:${this.recipe.cellStyle}`
     if (key !== this.gridKey) {
-      this.grid = sampleImage(this.image, this.recipe.cols, this.recipe.cellStyle)
+      this.grid = sampleImage(this.image, cols, this.recipe.cellStyle)
       this.gridKey = key
       this.resize()
     }
