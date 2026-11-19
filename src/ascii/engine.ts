@@ -174,6 +174,22 @@ interface PreparedEffect {
   weights: Float32Array
   /** Per-row background estimate used to fill the hole a moving region leaves. */
   fill?: Float32Array // rows * 3
+  /** Phase: the masked region's centroid (cells) and radius (column units). */
+  disc?: { cx: number; cy: number; r: number }
+}
+
+/** Centroid and equal-area radius of a mask, measured in column-width units. */
+function discOf(grid: SourceGrid, weights: Float32Array, rowScale: number) {
+  let sx = 0, sy = 0, n = 0
+  for (let i = 0; i < weights.length; i++) {
+    if (weights[i] > 0.5) {
+      sx += i % grid.cols
+      sy += Math.floor(i / grid.cols)
+      n++
+    }
+  }
+  if (!n) return { cx: grid.cols / 2, cy: grid.rows / 2, r: 1 }
+  return { cx: sx / n, cy: sy / n, r: Math.sqrt((n * rowScale) / Math.PI) }
 }
 
 /** Graded color after global tone controls, per cell. */
@@ -294,6 +310,7 @@ export class AsciiEngine {
         const weights = maskWeights(grid, effect.mask, this.keep)
         const p: PreparedEffect = { effect, weights }
         if (isMover(effect.kind)) p.fill = rowFill(grid, this.graded!, weights)
+        if (effect.kind === 'phase') p.disc = discOf(grid, weights, 1 / CELL_ASPECT[this.recipe.cellStyle])
         return p
       })
     // Moving effects decide *which* cell shows, so they run before the rest.
@@ -423,6 +440,24 @@ export class AsciiEngine {
               if (w > 0.01) {
                 const ph = hash2(Math.floor(x / (4 * e.scale)), Math.floor(y / (3 * e.scale))) * 6.283
                 m *= 1 + k * 0.9 * w * Math.sin(time * sp * 2.2 + ph)
+              }
+              break
+            }
+            case 'phase': {
+              const w = p.weights[src]
+              if (w > 0.01 && p.disc) {
+                // A same-size shadow disc slides across: offset -2r (full) → 0 (new) → +2r (full),
+                // then wraps; both ends are a full disc, so the loop is seamless.
+                const { cx, cy, r } = p.disc
+                const t01 = (((time * sp * 0.12) % 1) + 1) % 1
+                const offset = (t01 * 4 - 2) * r
+                const rowScale = 1 / CELL_ASPECT[recipe.cellStyle]
+                const dxs = (src % cols) - (cx + offset)
+                const dys = (Math.floor(src / cols) - cy) * rowScale
+                const soft = 0.6 + e.scale
+                const shade = 1 - smooth(r - soft, r + soft, Math.hypot(dxs, dys))
+                // Earthshine: the dark side never goes fully black at low intensity.
+                m *= 1 - shade * w * (0.55 + 0.43 * k)
               }
               break
             }

@@ -46,6 +46,7 @@ const DEFAULT_MASKS: Record<EffectKind, Mask> = {
   breathe: {},
   bob: { subject: true },
   drift: { subject: true },
+  phase: { subject: true },
 }
 
 export function Tweaks({ recipe, canWrite, peers, onGlobal, onEffect, onReplace, onHold, onHighlight, onRefine }: Props) {

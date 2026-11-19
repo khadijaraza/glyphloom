@@ -80,6 +80,20 @@ function extractJson(text: string): unknown {
   return JSON.parse(body.slice(start, end + 1))
 }
 
+/** Rewrite a possibly time-based request into a prompt for one still frame. Falls back to the original. */
+async function toSingleFrame(tools: ActionTools, prompt: string): Promise<string> {
+  const r = await callIntegration<{ content?: Array<{ type: string; text?: string }> }>(tools, 'anthropic/chat-completion', {
+    model: FALLBACK_MODEL,
+    max_tokens: 200,
+    temperature: 0,
+    system:
+      'Rewrite the request as a prompt for ONE still image: a single frame. Anything that changes over time (phases, stages, growing, blooming, transitions, cycles, before/after) must be depicted ONCE, in its most complete or recognizable state, as a single instance. Never ask for multiple copies, sequences, grids, or diagrams. Keep the subject, setting and style. Reply with the rewritten prompt only.',
+    messages: [{ role: 'user', content: prompt }],
+  })
+  const text = r.ok ? (r.data.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('').trim() : ''
+  return text && text.length < 600 ? text : prompt
+}
+
 const RECIPE_GUIDE = `You direct a fixed ASCII-animation renderer. You never write code; you output JSON only.
 
 The renderer turns an image into a grid of colored characters and animates regions selected by MASKS.
@@ -108,6 +122,11 @@ and use bob/drift for the subject itself plus small glow/sparkle accents. For fu
 
   bob     — the subject floats up and down in place (creature, balloon, boat). Use mask {"subject": true}.
   drift   — the subject travels sideways across the frame and loops while bobbing (fish, birds, jellyfish). Use mask {"subject": true}.
+  phase   — a soft shadow disc sweeps across a round subject on a loop: moon phases (full → new → full), eclipses, a planet turning.
+            Use mask {"subject": true} (with cutout) or a tight lum/hue mask on the disc. speed ~0.5-1 (one cycle ≈ 8 s at speed 1), intensity = how dark the shadow gets.
+
+Motion beats multiplication: the image is ONE frame. If the person describes something changing over time (phases, blooming, growing,
+day turning to night), express that change with effects on a single subject — never expect multiple copies in the picture.
 
 Rules of taste:
 - 2 to 5 effects. Each effect targets one recognizable thing with a mask derived from the image summary.
@@ -128,6 +147,11 @@ export const actions: Record<string, ActionHandler<Env>> = {
     const limited = await meter(tools, userId, 'image')
     if (limited) return fail(limited)
 
+    // Image models draw one still frame. A prompt about change over time ("a moon
+    // through all its phases") gets painted as a strip of copies, so first rewrite it
+    // into a single-frame description; the motion step handles the change itself.
+    const still = await toSingleFrame(tools, prompt)
+
     const r = await callIntegration<{ images: string[] }>(tools, 'openai/generate-image', {
       model: 'gpt-image-1-mini',
       n: 4,
@@ -135,8 +159,8 @@ export const actions: Record<string, ActionHandler<Env>> = {
       quality: 'low',
       prompt:
         params.mode === 'object'
-          ? `${prompt}. A single isolated subject, centered, filling most of the frame, on a pure flat black background. No scenery, no ground, no shadow, no text. Bold clean silhouette, bright saturated colors, simple shapes.`
-          : `${prompt}. Composition for ASCII art: strong silhouettes, high contrast between subject and background, clear bright light sources, rich but limited color palette, minimal fine texture, no text.`,
+          ? `${still}. A single isolated subject, centered, filling most of the frame, on a pure flat black background. No scenery, no ground, no shadow, no text. Bold clean silhouette, bright saturated colors, simple shapes.`
+          : `${still}. Composition for ASCII art: strong silhouettes, high contrast between subject and background, clear bright light sources, rich but limited color palette, minimal fine texture, no text.`,
     })
     if (!r.ok) return fail(r.error)
 
@@ -162,7 +186,7 @@ export const actions: Record<string, ActionHandler<Env>> = {
       }
     }
     if (!keys.length) return fail('Image generation returned nothing usable. Try again.')
-    return { success: true, data: { keys } }
+    return { success: true, data: { keys, stillPrompt: still } }
   },
 
   /** Prompt + client-computed color summary (+ small JPEG) → a validated recipe. */

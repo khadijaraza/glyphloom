@@ -23,6 +23,7 @@ export const EFFECT_KINDS = [
   'breathe', // slow brightness/scale breathing of the whole mask: sky, aura
   'bob', // masked region floats up and down in place: a creature, a balloon, a boat
   'drift', // masked region travels across the frame and loops, bobbing: fish, birds, jellyfish
+  'phase', // a shadow disc sweeps across the region: moon phases, eclipses
 ] as const
 export type EffectKind = (typeof EFFECT_KINDS)[number]
 
@@ -37,6 +38,7 @@ export const EFFECT_INFO: Record<EffectKind, { label: string; hint: string }> = 
   breathe: { label: 'Breathe', hint: 'Slow brightness swell.' },
   bob: { label: 'Bob', hint: 'Floats up and down in place.' },
   drift: { label: 'Drift', hint: 'Travels across and loops around.' },
+  phase: { label: 'Phase', hint: 'A shadow sweeps across it, like the moon’s phases.' },
 }
 
 export const GLYPH_SETS = {
