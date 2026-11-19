@@ -107,7 +107,9 @@ Rules of taste:
 - Prefer subtle (intensity 0.3-0.6). Motion should feel alive, not seizure-y.
 - Use the image summary's hue/lum/y statistics to set mask ranges; make masks tight enough to isolate the subject.
 - Effect ids are short kebab-case and unique (e.g. "lantern-glow").
-- Labels are 1-3 words naming the subject ("Lanterns", "Lake").`
+- Labels are 1-3 words naming the subject ("Lanterns", "Lake").
+- This is ASCII art: default to glyphs 'classic' or 'dense'. Use 'blocks' or 'dots' only when the person asks for pixel/blocky/dotted looks.
+- Title: 2-4 evocative words.`
 
 const ALLOWED_KINDS = EFFECT_KINDS.join(', ')
 

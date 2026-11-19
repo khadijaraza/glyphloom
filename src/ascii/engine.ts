@@ -284,6 +284,7 @@ export class AsciiEngine {
     const [bgR, bgG, bgB] = hexToRgb(recipe.background)
     const [inkR, inkG, inkB] = hexToRgb(recipe.ink)
     const tile = recipe.cellStyle === 'tile'
+    const blocks = recipe.glyphs === 'blocks'
     const time = t * recipe.tempo
 
     ctx.fillStyle = recipe.background
@@ -447,6 +448,13 @@ export class AsciiEngine {
             ctx.fillStyle = css(r * 1.25, g * 1.25, b * 1.25)
             ctx.fillText(glyph, px + cw / 2, py + ch / 2)
           } else glyphs[y * cols + x] = ' '
+        } else if (glyph !== ' ' && blocks) {
+          // Font block glyphs never quite fill the cell and leave seams between rows,
+          // so the block set is drawn as rectangles with density as opacity.
+          ctx.globalAlpha = gi / rampMax
+          ctx.fillStyle = css(r * 1.15, g * 1.15, b * 1.15)
+          ctx.fillRect(px, py, cw + 0.5, ch + 0.5)
+          ctx.globalAlpha = 1
         } else if (glyph !== ' ') {
           ctx.fillStyle = css(r * 1.15, g * 1.15, b * 1.15)
           ctx.fillText(glyph, px + cw / 2, py + ch / 2)
