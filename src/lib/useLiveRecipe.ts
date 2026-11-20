@@ -53,7 +53,12 @@ function writeRecipe(doc: Y.Doc, recipe: Recipe) {
   }, 'local')
 }
 
-export function useLiveRecipe(pieceId: string, fallback: Recipe | null, me: { id: string; name: string } | null) {
+export function useLiveRecipe(
+  pieceId: string,
+  fallback: Recipe | null,
+  me: { id: string; name: string } | null,
+  agent?: { recipe: unknown; at?: string },
+) {
   const { doc, awareness, synced, canWrite, updateCount } = useYjsField('pieces', pieceId, 'live')
   const { put } = useMutations<{ recipe: Recipe }>('pieces')
   const [peers, setPeers] = useState<Peer[]>([])
@@ -63,6 +68,20 @@ export function useLiveRecipe(pieceId: string, fallback: Recipe | null, me: { id
   useEffect(() => {
     if (synced && canWrite && fallback && doc.getMap('g').size === 0) writeRecipe(doc, fallback)
   }, [synced, canWrite, fallback, doc])
+
+  // An agent tool edited the piece (it can't write Yjs): fold that edit into the
+  // live doc once, so everyone watching sees it. `meta.agentAt` marks it applied.
+  useEffect(() => {
+    if (!synced || !canWrite || !agent?.at) return
+    const meta = doc.getMap('meta')
+    if (meta.get('agentAt') === agent.at) return
+    const next = safeRecipe(agent.recipe)
+    if (!next) return
+    doc.transact(() => {
+      writeRecipe(doc, next)
+      meta.set('agentAt', agent.at)
+    }, 'local')
+  }, [synced, canWrite, agent?.at, agent?.recipe, doc])
 
   const recipe = useMemo(
     () => readRecipe(doc) ?? fallback ?? DEFAULT_RECIPE,

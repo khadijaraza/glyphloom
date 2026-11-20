@@ -41,6 +41,8 @@ type PieceData = {
   inGallery?: boolean
   publishedAt?: string
   authorName?: string
+  agentRecipe?: unknown
+  agentAt?: string
 }
 type SendData = { pieceId: string; toUserId: string; seenAt: string }
 
@@ -75,7 +77,8 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
 
   const me = useMemo(() => (userId ? { id: userId, name: user?.name || 'Someone' } : null), [userId, user?.name])
   const fallback = useMemo(() => safeRecipe(piece.recipe), [piece.recipe])
-  const live = useLiveRecipe(id, fallback, me)
+  const agentEdit = useMemo(() => ({ recipe: piece.agentRecipe, at: piece.agentAt }), [piece.agentRecipe, piece.agentAt])
+  const live = useLiveRecipe(id, fallback, me, agentEdit)
 
   const [image, setImage] = useState<Source | null>(null)
   const [highlight, setHighlight] = useState<string | null>(null)

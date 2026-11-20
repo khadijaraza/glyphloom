@@ -11,7 +11,9 @@ import { jsonSchema, tool } from 'ai'
 import type { ToolSet } from 'ai'
 import { z } from 'zod/v4'
 import { BUILT_IN_TOOLS, applyAiToolDefaults } from 'deepspace/worker'
-import type { ToolSchema, CollectionSchema } from 'deepspace/worker'
+import type { AgentToolContext, ToolSchema, CollectionSchema } from 'deepspace/worker'
+import type { Env } from '../../worker.js'
+import { buildGlyphloomTools } from './glyphloom-tools.js'
 
 type ToolExecutor = (toolName: string, params: Record<string, unknown>) => Promise<unknown>
 
@@ -77,8 +79,10 @@ export function buildSystemPrompt(appName: string, schemas: CollectionSchema[]):
 // Tool definitions
 // ============================================================================
 
-export function buildTools(executor: ToolExecutor): ToolSet {
-  const tools: ToolSet = {}
+export function buildTools(executor: ToolExecutor, context?: AgentToolContext<Env>): ToolSet {
+  // App-specific tools first: they carry Glyphloom's own rules (who can edit,
+  // validated settings, the billing allowance).
+  const tools: ToolSet = { ...buildGlyphloomTools(executor, context) }
 
   for (const def of BUILT_IN_TOOLS) {
     if (!ALLOWED_TOOL_NAMES.includes(def.name)) continue

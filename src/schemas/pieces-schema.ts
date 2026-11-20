@@ -32,6 +32,12 @@ export const piecesSchema: CollectionSchema = {
     { name: 'publishedAt', storage: 'text', interpretation: 'plain' },
     /** Display name captured at publish time (signed-out visitors get no user roster). */
     { name: 'authorName', storage: 'text', interpretation: 'plain' },
+    /**
+     * Edits made by an agent tool (no browser, so no Yjs write). Open editors
+     * apply a newer `agentAt` into the live doc, so watchers see it change.
+     */
+    { name: 'agentRecipe', storage: 'text', interpretation: { kind: 'json' } },
+    { name: 'agentAt', storage: 'text', interpretation: 'plain' },
   ],
   visibilityField: { field: 'visibility', value: 'link' },
   collaboratorsField: 'collaborators',
