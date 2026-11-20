@@ -8,15 +8,14 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Seo } from '../components/Seo'
 import { AsciiCanvas } from '../components/AsciiCanvas'
-import { LILY_RECIPE, paintLily } from '../ascii/demo'
+import { paintStippleFlower, STIPPLE_FLOWER_RECIPE } from '../ascii/demo'
 import { seo } from '../seo'
 
-function Lily() {
+function Flower() {
   const [scene, setScene] = useState<HTMLCanvasElement | null>(null)
-  useEffect(() => setScene(paintLily()), [])
-  if (!scene) return <div className="aspect-[8/5] w-full" />
-  // Ink on paper: black stipple on the page's own cream.
-  return <AsciiCanvas image={scene} recipe={{ ...LILY_RECIPE, background: '#f3eee3', ink: '#161412', grid: 0 }} />
+  useEffect(() => setScene(paintStippleFlower()), [])
+  if (!scene) return <div className="aspect-square w-full" />
+  return <AsciiCanvas image={scene} recipe={STIPPLE_FLOWER_RECIPE} />
 }
 
 export default function Landing() {
@@ -39,8 +38,9 @@ export default function Landing() {
         </header>
 
         <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-6 pb-16">
-          <div className="w-full">
-            <Lily />
+          {/* The art sits on its own charcoal "print", set into the paper page. */}
+          <div className="w-full max-w-xl overflow-hidden rounded-sm bg-[#1b1b1b] shadow-xl shadow-[#161412]/25">
+            <Flower />
           </div>
           <h1 className="mt-6 text-center text-2xl tracking-tight sm:text-3xl">
             pictures that move, <span className="text-primary">made of letters</span>

@@ -265,8 +265,138 @@ export const LILY_RECIPE: Recipe = parseRecipe({
   brightness: 0,
   saturation: 1,
   effects: [
-    { id: 'lily-bloom', kind: 'bloom', label: 'Lily', mask: { subject: true }, speed: 0.55, intensity: 0.55, scale: 1 },
+    { id: 'lily-bloom', kind: 'bloom', label: 'Lily', mask: { subject: true }, speed: 0.55, intensity: 0.85, scale: 1 },
     { id: 'lily-glow', kind: 'glow', label: 'Heart', mask: { subject: true, hue: [35, 60] }, speed: 0.8, intensity: 0.35, scale: 1.5 },
     { id: 'lily-dust', kind: 'sparkle', label: 'Pollen', mask: { subject: true, lum: [0.7, 1] }, speed: 0.6, intensity: 0.25, scale: 1 },
+  ],
+})
+
+/**
+ * An original flower drawn for line-art stipple: long thin curling petals, a
+ * trailing leaf and stem, and stamens radiating from the heart. Painted as
+ * soft grey fills with bright rims; the recipe's `edges` turns rims into dense
+ * dot outlines and fills into sparse speckle.
+ */
+export function paintStippleFlower(w = 1200, h = 1200): HTMLCanvasElement {
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, w, h)
+  const rand = rng(11)
+  const O = { x: 600, y: 470 } // heart of the flower
+
+  type P = [number, number]
+  /**
+   * A petal from the heart to `tip`: `width` is its half-width at the widest
+   * point, `bend` curves it sideways (positive = clockwise), `fill` its body.
+   */
+  const petal = (tip: P, width: number, bend = 0, fill = 0.3) => {
+    const dx = tip[0] - O.x
+    const dy = tip[1] - O.y
+    const len = Math.hypot(dx, dy)
+    const nx = -dy / len
+    const ny = dx / len
+    const at = (t: number, off: number): P => [O.x + dx * t + nx * (off + bend * Math.sin(t * Math.PI)), O.y + dy * t + ny * (off + bend * Math.sin(t * Math.PI))]
+    const a1 = at(0.3, width * 0.9)
+    const a2 = at(0.78, width * 0.75)
+    const b1 = at(0.3, -width * 0.9)
+    const b2 = at(0.78, -width * 0.75)
+    ctx.beginPath()
+    ctx.moveTo(O.x, O.y)
+    ctx.bezierCurveTo(a1[0], a1[1], a2[0], a2[1], tip[0], tip[1])
+    ctx.bezierCurveTo(b2[0], b2[1], b1[0], b1[1], O.x, O.y)
+    const g = ctx.createLinearGradient(O.x, O.y, tip[0], tip[1])
+    g.addColorStop(0, `rgba(255,255,255,${fill + 0.3})`)
+    g.addColorStop(1, `rgba(255,255,255,${fill * 0.55})`)
+    ctx.fillStyle = g
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)'
+    ctx.lineWidth = 6
+    ctx.stroke()
+    // A few soft veins running out toward the tip.
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+    ctx.lineWidth = 3
+    for (const off of [-0.35, 0, 0.35]) {
+      const m = at(0.55, width * off)
+      ctx.beginPath()
+      ctx.moveTo(O.x, O.y)
+      ctx.quadraticCurveTo(m[0], m[1], ...at(0.92, width * off * 0.4))
+      ctx.stroke()
+    }
+  }
+
+  // Stem and a long trailing leaf, drawn first so petals sit over them.
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)'
+  ctx.lineWidth = 9
+  ctx.beginPath()
+  ctx.moveTo(O.x - 20, O.y + 40)
+  ctx.bezierCurveTo(540, 760, 450, 980, 340, 1170)
+  ctx.stroke()
+  petal([150, 880], 46, -40, 0.18)
+
+  // Back petals, broad and overlapping.
+  petal([380, 120], 120, 30, 0.28)
+  petal([640, 60], 110, -20, 0.3)
+  // The big petal to the right, bending down with its tip folded back.
+  petal([1010, 360], 150, 70, 0.34)
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+  ctx.lineWidth = 7
+  ctx.beginPath()
+  ctx.moveTo(1010, 360)
+  ctx.quadraticCurveTo(1070, 330, 1030, 420)
+  ctx.stroke()
+  // Wide petal sweeping left and slightly down.
+  petal([140, 380], 130, -50, 0.3)
+  // Lower petals: one drooping right, one hanging down.
+  petal([900, 800], 85, 40, 0.22)
+  petal([600, 940], 70, -30, 0.2)
+
+  // Stamens: thin lines radiating up and out, each tipped with a bright anther.
+  for (let i = 0; i < 60; i++) {
+    const a = (-170 + rand() * 160) * (Math.PI / 180)
+    const len = 90 + rand() * 150
+    const ex = O.x + Math.cos(a) * len
+    const ey = O.y + Math.sin(a) * len
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)'
+    ctx.lineWidth = 3.5
+    ctx.beginPath()
+    ctx.moveTo(O.x, O.y)
+    ctx.quadraticCurveTo(O.x + Math.cos(a) * len * 0.5 + (rand() - 0.5) * 20, O.y + Math.sin(a) * len * 0.5, ex, ey)
+    ctx.stroke()
+    ctx.fillStyle = '#fff'
+    ctx.beginPath()
+    ctx.arc(ex, ey, 6 + rand() * 4, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  // Dense, bright heart.
+  const heart = ctx.createRadialGradient(O.x, O.y, 0, O.x, O.y, 130)
+  heart.addColorStop(0, 'rgba(255,255,255,0.95)')
+  heart.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = heart
+  ctx.beginPath()
+  ctx.arc(O.x, O.y, 130, 0, Math.PI * 2)
+  ctx.fill()
+  return c
+}
+
+export const STIPPLE_FLOWER_RECIPE: Recipe = parseRecipe({
+  title: 'Night flower',
+  cols: 300,
+  glyphs: 'classic',
+  cellStyle: 'dots',
+  colorMode: 'mono',
+  ink: '#eef4f7',
+  background: '#1b1b1b',
+  cutout: 0.12,
+  edges: 0.7,
+  grid: 0,
+  contrast: 1.2,
+  brightness: 0.05,
+  effects: [
+    { id: 'flower-breathe', kind: 'bloom', label: 'Flower', mask: { subject: true }, speed: 0.3, intensity: 0.12, scale: 1 },
+    { id: 'flower-sway', kind: 'sway', label: 'Petals', mask: { subject: true }, speed: 0.5, intensity: 0.35, scale: 2.2 },
+    { id: 'anthers', kind: 'sparkle', label: 'Anthers', mask: { subject: true, lum: [0.75, 1] }, speed: 0.5, intensity: 0.3, scale: 1 },
   ],
 })

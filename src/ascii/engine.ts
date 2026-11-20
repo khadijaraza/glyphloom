@@ -465,9 +465,10 @@ export class AsciiEngine {
                 const c = (((time * sp * 0.1) % 1) + 1) % 1
                 const ease = (u: number) => u * u * (3 - 2 * u)
                 const open = c < 0.42 ? ease(c / 0.42) : c < 0.72 ? 1 : 1 - ease((c - 0.72) / 0.28)
-                const lo = 0.18 + (1 - k) * 0.3
+                // intensity = how far it closes: 0 barely breathes, 1 folds to a tight bud.
+                const lo = 1 - k * 0.82
                 const sxs = lo + (1 - lo) * open
-                const sys = 0.45 + 0.55 * open
+                const sys = 1 - (1 - lo) * 0.62 * (1 - open)
                 fx = p.disc.cx + (x - p.disc.cx) / sxs
                 fy = p.disc.base + (y - p.disc.base) / sys
                 m *= 0.75 + 0.35 * open
@@ -611,7 +612,7 @@ export class AsciiEngine {
           // fixed per-cell jitter so it reads as hand-placed ink rather than a lattice.
           // True stippling: dot *density* follows brightness (each cell keeps its dot
           // with probability ~ l^1.3), so highlights stay airy instead of a solid mass.
-          if (l < 0.05 || hash2(x * 5 + 3, y * 11 + 7) > Math.pow(l, 1.3) * 1.05) {
+          if (l < 0.04 || hash2(x * 5 + 3, y * 11 + 7) > Math.pow(l, 1.1) * 1.3) {
             glyphs[y * cols + x] = ' '
           } else {
             const rad = cw * (0.16 + 0.24 * l)
@@ -747,7 +748,33 @@ function grade(grid: SourceGrid, recipe: Recipe): Graded {
     out.b[i] = b
     out.lum[i] = 0.2126 * r + 0.7152 * g + 0.0722 * b
   }
+  if (recipe.edges > 0) emphasizeEdges(out, grid.cols, grid.rows, recipe.edges)
   return out
+}
+
+/**
+ * Sobel edge strength on the graded brightness, blended in by `amount`.
+ * Color is rescaled to the new brightness, so hue survives.
+ */
+function emphasizeEdges(out: Graded, cols: number, rows: number, amount: number) {
+  const L = out.lum.slice()
+  const at = (x: number, y: number) => L[Math.min(rows - 1, Math.max(0, y)) * cols + Math.min(cols - 1, Math.max(0, x))]
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const gx = at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x - 1, y) - at(x - 1, y + 1)
+      const gy = at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x, y - 1) - at(x + 1, y - 1)
+      const e = Math.min(1, Math.hypot(gx, gy) * 0.9)
+      const i = y * cols + x
+      const l0 = L[i]
+      // Keep a faint trace of the fill so interiors read as sparse, not empty.
+      const l1 = l0 * (1 - amount) + Math.max(e, l0 * 0.28) * amount
+      const k = l0 > 1e-3 ? l1 / l0 : 0
+      out.r[i] = l0 > 1e-3 ? Math.min(1, out.r[i] * k) : l1
+      out.g[i] = l0 > 1e-3 ? Math.min(1, out.g[i] * k) : l1
+      out.b[i] = l0 > 1e-3 ? Math.min(1, out.b[i] * k) : l1
+      out.lum[i] = l1
+    }
+  }
 }
 
 /** Average color of non-masked cells per row, darkened slightly; falls back to the image mean. */

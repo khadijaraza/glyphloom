@@ -107,6 +107,11 @@ export const recipeSchema = z.object({
    * (or very dark) become empty, so an object floats on its own.
    */
   cutout: z.number().min(0).max(1).default(0),
+  /**
+   * Edge emphasis, 0 = off. Blends brightness toward detected contours, so
+   * marks gather on outlines and interiors go sparse (line-art stipple).
+   */
+  edges: z.number().min(0).max(1).default(0),
   /** Opacity of the faint cell grid behind the art, 0 = off. */
   grid: z.number().min(0).max(1).default(0.35),
   /** Global playback speed multiplier. */
@@ -167,6 +172,7 @@ export const GLOBAL_SLIDERS = [
   { key: 'tempo', label: 'Tempo', min: 0, max: 3, step: 0.01 },
   { key: 'grid', label: 'Grid', min: 0, max: 1, step: 0.01 },
   { key: 'cutout', label: 'Remove background', min: 0, max: 1, step: 0.01 },
+  { key: 'edges', label: 'Edges', min: 0, max: 1, step: 0.01 },
 ] as const satisfies ReadonlyArray<{ key: keyof Recipe; label: string; min: number; max: number; step: number }>
 
 export const EFFECT_SLIDERS = [
