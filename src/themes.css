@@ -55,7 +55,7 @@
   --color-card-foreground: #161412;
   --color-popover: #fbf8f1;
   --color-popover-foreground: #161412;
-  --color-primary: #c8281e;
+  --color-primary: #8e1b15;
   --color-primary-foreground: #fffaf2;
   --color-secondary: #ebe4d6;
   --color-secondary-foreground: #161412;
@@ -63,11 +63,11 @@
   --color-muted-foreground: #6b645a;
   --color-accent: #e6ddcb;
   --color-accent-foreground: #161412;
-  --color-destructive: #c8281e;
+  --color-destructive: #8e1b15;
   --color-destructive-foreground: #ffffff;
   --color-border: rgba(22, 20, 18, 0.16);
   --color-input: rgba(22, 20, 18, 0.22);
-  --color-ring: #c8281e;
+  --color-ring: #8e1b15;
   --radius: 0.35rem;
   --font-sans: "Courier Prime", "Courier New", ui-monospace, monospace;
   --font-mono: "Courier Prime", "Courier New", ui-monospace, monospace;

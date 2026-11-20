@@ -390,12 +390,12 @@ You are now EDITING an existing recipe. Return a minimal JSON PATCH, not the who
         to: toEmail,
         subject: `${fromName} made you something: “${title}”`,
         html: `<div style="font-family:'Courier Prime','Courier New',monospace;background:#f3eee3;color:#161412;padding:32px;border-radius:6px">
-<p style="margin:0 0 8px;color:#c8281e;font-size:12px;letter-spacing:.15em;font-weight:bold">GLYPHLOOM</p>
+<p style="margin:0 0 8px;color:#8e1b15;font-size:12px;letter-spacing:.15em;font-weight:bold">GLYPHLOOM</p>
 <h1 style="margin:0 0 16px;font-size:22px">${safe(fromName)} sent you a moving ASCII piece</h1>
 <p style="margin:0 0 8px">“${safe(title)}”</p>
 ${note ? `<p style="margin:0 0 20px;color:#4a443c">${safe(note)}</p>` : ''}
 ${gifUrl ? `<a href="${link}"><img src="${gifUrl}" alt="${safe(title)}, animated" width="520" style="display:block;max-width:100%;height:auto;border-radius:4px;margin:0 0 20px;border:1px solid #d8d0c0" /></a>` : ''}
-<a href="${link}" style="display:inline-block;background:#c8281e;color:#fffaf2;padding:10px 18px;border-radius:3px;text-decoration:none;font-weight:bold">Watch it move →</a>
+<a href="${link}" style="display:inline-block;background:#8e1b15;color:#fffaf2;padding:10px 18px;border-radius:3px;text-decoration:none;font-weight:bold">Watch it move →</a>
 <p style="margin:20px 0 0;color:#6b645a;font-size:12px">Sign in on the page to tweak it together live.</p></div>`,
         text: `${fromName} sent you “${title}”. ${note}\n\nWatch it: ${link}`,
       })

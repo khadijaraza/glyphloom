@@ -15,7 +15,8 @@ function Flower() {
   const [scene, setScene] = useState<HTMLCanvasElement | null>(null)
   useEffect(() => setScene(paintStippleFlower()), [])
   if (!scene) return <div className="aspect-square w-full" />
-  return <AsciiCanvas image={scene} recipe={STIPPLE_FLOWER_RECIPE} />
+  // Ink straight onto the paper: black stipple, page-colored ground, no frame.
+  return <AsciiCanvas image={scene} recipe={{ ...STIPPLE_FLOWER_RECIPE, background: '#f3eee3', ink: '#161412' }} />
 }
 
 export default function Landing() {
@@ -38,8 +39,7 @@ export default function Landing() {
         </header>
 
         <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-6 pb-16">
-          {/* The art sits on its own charcoal "print", set into the paper page. */}
-          <div className="w-full max-w-xl overflow-hidden rounded-sm bg-[#1b1b1b] shadow-xl shadow-[#161412]/25">
+          <div className="w-full max-w-xl">
             <Flower />
           </div>
           <h1 className="mt-6 text-center text-2xl tracking-tight sm:text-3xl">
