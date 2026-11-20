@@ -45,6 +45,7 @@ export const EFFECT_INFO: Record<EffectKind, { label: string; hint: string }> = 
 
 export const GLYPH_SETS = {
   classic: ' .:-=+*#%@',
+  minimal: ' .:-',
   dense: " .'`^\",:;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
   blocks: ' ░▒▓█',
   dots: ' ·∙•●',
@@ -52,6 +53,32 @@ export const GLYPH_SETS = {
   lines: ' -=≡',
 } as const
 export type GlyphSet = keyof typeof GLYPH_SETS
+
+/** Display names for the character ramps. */
+export const GLYPH_LABELS: Record<GlyphSet, string> = {
+  classic: 'Standard',
+  minimal: 'Minimal',
+  dense: 'Detailed',
+  blocks: 'Blocks',
+  dots: 'Dots',
+  binary: 'Binary',
+  lines: 'Lines',
+}
+
+/** How characters composite over the background (canvas blend modes). */
+export const BLEND_MODES = {
+  normal: 'source-over',
+  multiply: 'multiply',
+  screen: 'screen',
+  overlay: 'overlay',
+  darken: 'darken',
+  lighten: 'lighten',
+  'color-dodge': 'color-dodge',
+  'color-burn': 'color-burn',
+  'soft-light': 'soft-light',
+  'hard-light': 'hard-light',
+} as const satisfies Record<string, GlobalCompositeOperation>
+export type BlendMode = keyof typeof BLEND_MODES
 
 /** Ranges are inclusive [min, max]. Hue is degrees and may wrap (e.g. [330, 30]). */
 const range01 = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)])
@@ -114,6 +141,19 @@ export const recipeSchema = z.object({
   edges: z.number().min(0).max(1).default(0),
   /** Opacity of the faint cell grid behind the art, 0 = off. */
   grid: z.number().min(0).max(1).default(0.35),
+  /** Tone curve; lower lifts shadows. 0.8 suits ASCII on dark grounds. */
+  gamma: z.number().min(0.3).max(2).default(0.8),
+  /** Bias toward denser (>1) or sparser (<1) characters for the same brightness. */
+  bias: z.number().min(0.3).max(3).default(1),
+  /** Pre-pixelate the source into blocks of N+1 cells before mapping, 0 = off. */
+  pixelate: z.number().int().min(0).max(12).default(0),
+  /** Vertical stretch of the grid (compensates for fonts taller or shorter than usual). */
+  heightScale: z.number().min(0.5).max(2).default(1),
+  /** Swap light and dark: dense marks where the image is dark (ink on paper). */
+  invert: z.boolean().default(false),
+  /** Leave the background empty (transparent PNG/SVG exports). */
+  transparent: z.boolean().default(false),
+  blend: z.enum(Object.keys(BLEND_MODES) as [BlendMode, ...BlendMode[]]).default('normal'),
   /** Global playback speed multiplier. */
   tempo: z.number().min(0).max(3).default(1),
   effects: z.array(effectSchema).max(8).default([]),
@@ -164,7 +204,11 @@ export function applyPatch(base: Recipe, patch: Record<string, unknown>): Recipe
 
 /** Slider metadata for the Tweaks panel — one source of truth for ranges. */
 export const GLOBAL_SLIDERS = [
-  { key: 'cols', label: 'Density', min: 40, max: 320, step: 1 },
+  { key: 'cols', label: 'Width (characters)', min: 40, max: 320, step: 1 },
+  { key: 'heightScale', label: 'Height scale', min: 0.5, max: 2, step: 0.01 },
+  { key: 'pixelate', label: 'Pixelate', min: 0, max: 12, step: 1 },
+  { key: 'bias', label: 'Density bias', min: 0.3, max: 3, step: 0.01 },
+  { key: 'gamma', label: 'Gamma', min: 0.3, max: 2, step: 0.01 },
   { key: 'contrast', label: 'Contrast', min: 0.5, max: 2, step: 0.01 },
   { key: 'brightness', label: 'Brightness', min: -0.5, max: 0.5, step: 0.01 },
   { key: 'saturation', label: 'Saturation', min: 0, max: 2, step: 0.01 },

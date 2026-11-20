@@ -10,7 +10,17 @@ import { Copy, Download, Film, GitFork, Globe, Loader2, Send, Undo2, Video } fro
 import { AsciiCanvas } from '../../../components/AsciiCanvas'
 import { SendDialog } from '../../../components/SendDialog'
 import { Tweaks } from '../../../components/Tweaks'
-import { Button, useToast } from '@/components/ui'
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  useToast,
+} from '@/components/ui'
+import { download, toAnsi, toHtml, toJson, toPng, toSvg, toText } from '../../../ascii/export'
 import type { AsciiEngine } from '../../../ascii/engine'
 import { loadSource, type Source } from '../../../ascii/source'
 import { renderGif } from '../../../ascii/gif'
@@ -149,19 +159,33 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
   }
 
   async function copyText() {
-    const text = engineRef.current.engine?.textFrame()
+    const f = engineRef.current.engine?.frameCells()
+    const text = f && toText(f)
     if (!text) return
     await navigator.clipboard.writeText('```\n' + text + '\n```')
     success('Copied', 'This frame is on your clipboard as a Markdown code block.')
   }
 
-  function downloadPng() {
+  async function exportAs(kind: 'png' | 'svg' | 'txt' | 'html' | 'json' | 'ansi', scale = 1) {
+    const engine = engineRef.current.engine
     const canvas = engineRef.current.canvas
-    if (!canvas) return
-    const a = document.createElement('a')
-    a.href = canvas.toDataURL('image/png')
-    a.download = `${(piece.title || 'glyphloom').replace(/[^\w-]+/g, '-')}.png`
-    a.click()
+    if (!engine || !canvas || !image) return
+    const name = (piece.title || 'glyphloom').replace(/[^\w-]+/g, '-')
+    try {
+      if (kind === 'png') {
+        const blob = await toPng(image, live.recipe, canvas.clientWidth, engine.now(), scale)
+        return download(blob, `${name}${scale > 1 ? `@${scale}x` : ''}.png`)
+      }
+      const f = engine.frameCells()
+      if (!f) return
+      if (kind === 'svg') download(toSvg(f), `${name}.svg`, 'image/svg+xml')
+      else if (kind === 'txt') download(toText(f), `${name}.txt`)
+      else if (kind === 'html') download(toHtml(f, piece.title), `${name}.html`, 'text/html')
+      else if (kind === 'json') download(toJson(f), `${name}.json`, 'application/json')
+      else download(toAnsi(f), `${name}.ans`)
+    } catch (e) {
+      error('Export failed', e instanceof Error ? e.message : undefined)
+    }
   }
 
   function recordVideo() {
@@ -259,18 +283,42 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
               <Undo2 />
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={copyText} title="Copy this frame as text">
-            <Copy /> Text
-          </Button>
-          <Button size="sm" variant="outline" onClick={downloadPng} title="Download a PNG of this frame">
-            <Download /> PNG
-          </Button>
-          <Button size="sm" variant="outline" onClick={downloadGif} disabled={gifBusy !== null || !image} title="Download a looping GIF (plays in email and chat)">
-            {gifBusy !== null ? <Loader2 className="animate-spin" /> : <Film />} {gifBusy !== null ? `${Math.round(gifBusy * 100)}%` : 'GIF'}
-          </Button>
-          <Button size="sm" variant="outline" onClick={recordVideo} disabled={recording} title="Record 6 seconds of video">
-            {recording ? <Loader2 className="animate-spin" /> : <Video />} {recording ? 'Recording…' : 'Video'}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button size="sm" variant="outline" disabled={!image}>
+                  {gifBusy !== null || recording ? <Loader2 className="animate-spin" /> : <Download />}
+                  {gifBusy !== null ? `GIF ${Math.round(gifBusy * 100)}%` : recording ? 'Recording…' : 'Export'}
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel>Image</DropdownMenuLabel>
+              {[1, 2, 4, 6].map((sc) => (
+                <DropdownMenuItem key={sc} onClick={() => exportAs('png', sc)}>
+                  PNG {sc}×
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuItem onClick={() => exportAs('svg')}>SVG (vector)</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Moving</DropdownMenuLabel>
+              <DropdownMenuItem onClick={downloadGif}>
+                <Film /> GIF (loops, plays in email)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={recordVideo}>
+                <Video /> Video (6 s WebM)
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Text</DropdownMenuLabel>
+              <DropdownMenuItem onClick={copyText}>
+                <Copy /> Copy as Markdown
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportAs('txt')}>TXT</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportAs('html')}>HTML (color)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportAs('json')}>JSON (color)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportAs('ansi')}>ANSI (color terminal)</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button size="sm" variant="outline" onClick={remix}>
             <GitFork /> Remix
           </Button>

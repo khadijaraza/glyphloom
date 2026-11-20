@@ -170,7 +170,10 @@ Effects (each: id, kind, label, enabled, mask, speed 0-3 (1=normal), intensity 0
 Global fields: cutout (0-1 background removal, 0 = off), title, cols (40-320; 140-200 typical for glyph, 220-280 for dots; lower = chunkier), glyphs (${Object.keys(GLYPH_SETS).join(' | ')}),
 cellStyle ('glyph' colored characters | 'dots' stipple: round dots sized by brightness, finest detail | 'tile' mosaic: bright areas become solid colored squares with glyphs, great for creatures and bold subjects; best at cols 60-100), grid (0-1 faint cell grid), colorMode ('source' | 'mono' | 'duotone'),
 ink (#hex, used by mono/duotone), background (#hex, near-black usually), contrast 0.5-2, brightness -0.5..0.5,
-saturation 0-2, hueShift -180..180, tempo 0-3.
+saturation 0-2, hueShift -180..180, tempo 0-3, gamma 0.3-2 (tone curve; 0.8 default), bias 0.3-3 (density bias: >1 denser characters),
+pixelate 0-12 (chunky pre-pixelation, 0 off), heightScale 0.5-2, invert (bool: dense marks where the image is dark — use for ink-on-paper looks
+with a light background), transparent (bool), blend ('normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' |
+'color-burn' | 'soft-light' | 'hard-light').
 
 Objects vs scenes: when the image is a single subject on a plain/black background (or the person asks for an object, creature, or "no background"),
 set cutout 0.3-0.6 so the background disappears, use mask {"subject": true} for whole-subject motion, prefer cellStyle 'tile' with cols 60-90,

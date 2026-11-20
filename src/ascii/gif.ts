@@ -28,7 +28,8 @@ export async function renderGif(
   const seconds = secondsOpt ?? (image instanceof AnimatedSource ? Math.min(6, Math.max(1, image.duration / 1000)) : 3)
   const canvas = document.createElement('canvas')
   // Fewer columns at GIF size keeps detail legible and the file small.
-  const engine = new AsciiEngine(canvas, { ...recipe, cols: Math.min(recipe.cols, recipe.cellStyle === 'dots' ? 170 : 96) }, { dpr: 1 })
+  // GIF has no partial transparency worth using here; always render on the ground color.
+  const engine = new AsciiEngine(canvas, { ...recipe, transparent: false, cols: Math.min(recipe.cols, recipe.cellStyle === 'dots' ? 170 : 96) }, { dpr: 1 })
   engine.paused = true
   engine.setImage(image)
   engine.setWidth(width)

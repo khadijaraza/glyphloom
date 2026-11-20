@@ -11,7 +11,7 @@
 2. **Choreograph:** the client samples the image into a cell grid and summarizes its color regions (hue, brightness and vertical position stats). That summary, a 512 px thumbnail and the prompt go to `anthropic/chat-completion`, which returns a **recipe**: which effects to apply, to which region (mask), and how strongly.
 3. **Tweak** (`/p/:id`): every recipe number is a slider. "Refine with words" ("slower lanterns, warmer orange") asks Claude for a **small JSON patch** to the current recipe, so nothing regenerates. Undo is available.
 4. **Objects, not just scenes:** "Object, no background" mode prompts for an isolated subject. **Remove background** blanks out cells that match the image's border color, so the subject floats on its own. **Bob** and **Drift** move the whole subject (mask `{ subject: true }`). There's a free koi demo.
-5. **Send:** pick a person on Glyphloom (their inbox updates live) or enter an email (an invite link via `email/send`). Recipients become collaborators and **co-tweak in real time**, with presence showing who's holding which slider. Anyone can **Remix** a copy. Export as a text frame (Markdown code block), PNG, a **looping GIF**, or a 6-second WebM.
+5. **Send:** pick a person on Glyphloom (their inbox updates live) or enter an email (an invite link via `email/send`). Recipients become collaborators and **co-tweak in real time**, with presence showing who's holding which slider. Anyone can **Remix** a copy. Export as PNG (1–6×), SVG, TXT, colored HTML/JSON/ANSI, a **looping GIF**, or a 6-second WebM.
 6. **Gallery** (`/gallery`, no sign-in needed): owners **Publish** a piece, which renders a GIF and lists it publicly with their name.
 
 **Moving pictures in Gmail.** Email clients won't run the renderer and strip video, but they play animated GIFs inline. Sending by email renders 3 seconds of the piece to a GIF in the browser (`gifenc`, one shared palette so colors don't flicker), stores it publicly in R2, and embeds it in the invite. The server builds the image URL from a validated key, never from a client-supplied URL. The gallery reuses the same GIFs as thumbnails, so a page of 30 animations costs no rendering.
@@ -30,6 +30,19 @@
 | Sign-in | DeepSpace auth (`AuthGate`, `AuthOverlay`) | `src/pages/(app)/(protected)/` |
 
 The renderer (`src/ascii/engine.ts`) is plain canvas-2D code with no dependencies. It has three cell styles: **Characters** (colored glyphs), **Mosaic** (solid cells with sparse glyphs), and **Dots**, a true stipple. In Dots, each cell keeps a jittered round dot with a probability that follows brightness, so dot *density* draws the image, at 200–300 columns. The demos (lily, koi) use Dots. It samples the image to a grid, grades it (contrast, saturation, hue rotation, shadow lift), computes soft **masks** (by brightness, hue, saturation and vertical band), and runs twelve effects per frame: `glow`, `rise`, `sway`, `wind`, `shimmer`, `sparkle`, `cycle`, `breathe`, `bob`, `drift`, `phase` and `bloom`. Moving effects map each cell to a *fractional* source position and blend the neighboring cells' colors, so motion glides instead of snapping a cell at a time. They fill the hole they leave with a per-row background estimate (or with nothing, when the background has been removed). `phase` slides a soft shadow disc across a round subject (moon phases). `bloom` opens the subject out from its base and closes it again (the lily on the landing page). The "Mosaic" style (solid cells with sparse glyphs, plus a faint grid) takes its visual ideas from [ascii-animals](https://github.com/DesignerStephen1/ascii-animals) (MIT). No code was copied.
+
+### Converter controls (modeled on Asciinator)
+
+The still-image controls follow [ASCIInator](https://asciinator.app/), a free in-browser converter with no API or published license, so this is an independent implementation of the same feature set, not its code:
+- character ramps (Standard, Minimal, Detailed, Blocks…)
+- **density bias**, **width**, **height scale**, **pixelate**
+- brightness, contrast, **gamma**
+- **invert**, a **transparent background**
+- ten **blend modes**
+- Original / Mono / Duotone color
+- exports to **PNG 1–6×, SVG, TXT, HTML, JSON and ANSI**
+
+Glyphloom then adds what a converter doesn't do: animation, AI direction, live co-editing, sending and the gallery.
 
 ## Integrations, and why
 

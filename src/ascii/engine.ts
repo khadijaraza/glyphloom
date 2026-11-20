@@ -10,7 +10,7 @@
  * inbox can share one implementation.
  */
 
-import { GLYPH_SETS, type Effect, type Mask, type Recipe } from './recipe'
+import { BLEND_MODES, GLYPH_SETS, type Effect, type Mask, type Recipe } from './recipe'
 import { AnimatedSource, type Source } from './source'
 
 /** Character cells are taller than wide; tiles are square. */
@@ -31,10 +31,15 @@ export interface SourceGrid {
 }
 
 /** Downsample an image to the recipe's grid. Area-averaged by the browser's scaler. */
-export function sampleImage(img: CanvasImageSource & { width: number; height: number }, cols: number, cellStyle: Recipe['cellStyle']): SourceGrid {
+export function sampleImage(
+  img: CanvasImageSource & { width: number; height: number },
+  cols: number,
+  cellStyle: Recipe['cellStyle'],
+  opts: { pixelate?: number; heightScale?: number } = {},
+): SourceGrid {
   const w = (img as HTMLImageElement).naturalWidth || img.width
   const h = (img as HTMLImageElement).naturalHeight || img.height
-  const rows = Math.max(8, Math.round(cols * (h / w) * CELL_ASPECT[cellStyle]))
+  const rows = Math.max(8, Math.round(cols * (h / w) * CELL_ASPECT[cellStyle] * (opts.heightScale ?? 1)))
   // Two-step downscale keeps detail without aliasing on large sources.
   const mid = document.createElement('canvas')
   mid.width = cols * 4
@@ -47,7 +52,22 @@ export function sampleImage(img: CanvasImageSource & { width: number; height: nu
   c.height = rows
   const ctx = c.getContext('2d', { willReadFrequently: true })!
   ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(mid, 0, 0, cols, rows)
+  const block = (opts.pixelate ?? 0) + 1
+  if (block > 1) {
+    // Pixelate: average into coarse blocks, then blow back up with hard edges.
+    const sw = Math.max(1, Math.round(cols / block))
+    const sh = Math.max(1, Math.round(rows / block))
+    const small = document.createElement('canvas')
+    small.width = sw
+    small.height = sh
+    const sctx = small.getContext('2d')!
+    sctx.imageSmoothingQuality = 'high'
+    sctx.drawImage(mid, 0, 0, sw, sh)
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(small, 0, 0, cols, rows)
+  } else {
+    ctx.drawImage(mid, 0, 0, cols, rows)
+  }
   const data = ctx.getImageData(0, 0, cols, rows).data
   const n = cols * rows
   const grid: SourceGrid = {
@@ -246,11 +266,13 @@ export class AsciiEngine {
   private cssWidth = 0
   /** Last rendered glyphs, for text export. */
   private lastGlyphs: string[] = []
+  private out = { rgb: new Uint8Array(0), dot: new Float32Array(0) }
+  private lastMeta: Omit<FrameCells, 'chars' | 'rgb' | 'dot'> | null = null
   paused = false
 
   constructor(canvas: HTMLCanvasElement, recipe: Recipe, opts: { dpr?: number; maxCols?: boolean } = {}) {
     this.canvas = canvas
-    this.ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: opts.dpr !== undefined })!
+    this.ctx = canvas.getContext('2d', { willReadFrequently: opts.dpr !== undefined })!
     this.recipe = recipe
     this.fixedDpr = opts.dpr ?? null
     this.capCols = opts.maxCols !== false
@@ -334,9 +356,9 @@ export class AsciiEngine {
   private prepare(drawAfter = true) {
     if (!this.image) return
     const cols = this.effectiveCols()
-    const key = `${cols}:${this.recipe.cellStyle}`
+    const key = `${cols}:${this.recipe.cellStyle}:${this.recipe.pixelate}:${this.recipe.heightScale}`
     if (key !== this.gridKey) {
-      this.grid = sampleImage(this.image, cols, this.recipe.cellStyle)
+      this.grid = sampleImage(this.image, cols, this.recipe.cellStyle, { pixelate: this.recipe.pixelate, heightScale: this.recipe.heightScale })
       this.gridKey = key
       this.resize()
     }
@@ -391,8 +413,12 @@ export class AsciiEngine {
     const blocks = recipe.glyphs === 'blocks'
     const time = t * recipe.tempo
 
-    ctx.fillStyle = recipe.background
-    ctx.fillRect(0, 0, this.cssWidth, ch * rows)
+    ctx.globalCompositeOperation = 'source-over'
+    if (recipe.transparent) ctx.clearRect(0, 0, this.cssWidth, ch * rows)
+    else {
+      ctx.fillStyle = recipe.background
+      ctx.fillRect(0, 0, this.cssWidth, ch * rows)
+    }
     // At stipple density a grid is just noise.
     if (recipe.grid > 0 && cw >= 5) {
       ctx.strokeStyle = `rgba(255,255,255,${0.09 * recipe.grid})`
@@ -415,6 +441,13 @@ export class AsciiEngine {
     const highlight = this.highlight ? this.effects.find((e) => e.effect.id === this.highlight) : null
     const glyphs = this.lastGlyphs
     glyphs.length = cols * rows
+    // Per-cell record of what was drawn, for the SVG/HTML/JSON/ANSI exports.
+    const n = cols * rows
+    if (this.out.rgb.length !== n * 3) this.out = { rgb: new Uint8Array(n * 3), dot: new Float32Array(n * 3) }
+    this.out.dot.fill(0)
+    this.lastMeta = { cols, rows, cw, ch, t, cellStyle: recipe.cellStyle, background: recipe.background, transparent: recipe.transparent }
+    // Characters composite over the ground with the chosen blend mode.
+    ctx.globalCompositeOperation = BLEND_MODES[recipe.blend]
 
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
@@ -600,10 +633,14 @@ export class AsciiEngine {
           b = bgB + (inkB - bgB) * l * 1.2
         }
 
-        // Gamma-lift the ramp so mid-darks still get a glyph instead of going blank.
-        const gi = glyphOverride >= 0 ? Math.max(1, glyphOverride) : Math.round(Math.pow(l, 0.62) * rampMax)
+        // Lift the ramp so mid-darks still get a glyph; density bias pushes it denser or sparser.
+        const gi = glyphOverride >= 0 ? Math.max(1, glyphOverride) : Math.min(rampMax, Math.round(Math.pow(l, 0.62 / recipe.bias) * rampMax))
         const glyph = ramp[gi]
         glyphs[y * cols + x] = glyph
+        const oi = (y * cols + x) * 3
+        this.out.rgb[oi] = Math.min(255, r * 1.15 * 255)
+        this.out.rgb[oi + 1] = Math.min(255, g * 1.15 * 255)
+        this.out.rgb[oi + 2] = Math.min(255, b * 1.15 * 255)
         const px = x * cw
         const py = y * ch
 
@@ -622,6 +659,9 @@ export class AsciiEngine {
             ctx.beginPath()
             ctx.arc(px + cw / 2 + jx, py + ch / 2 + jy, rad, 0, 6.283)
             ctx.fill()
+            this.out.dot[oi] = rad
+            this.out.dot[oi + 1] = jx
+            this.out.dot[oi + 2] = jy
           }
         } else if (tile) {
           // Mosaic: bright cells become solid blocks with a sparse dark glyph
@@ -654,7 +694,35 @@ export class AsciiEngine {
         }
       }
     }
+    ctx.globalCompositeOperation = 'source-over'
   }
+
+  /** Everything the last frame drew, cell by cell (for vector and text exports). */
+  frameCells(): FrameCells | null {
+    if (!this.lastMeta) return null
+    return { ...this.lastMeta, chars: this.lastGlyphs.slice(), rgb: this.out.rgb.slice(), dot: this.out.dot.slice() }
+  }
+
+  /** Seconds since start, on the engine's clock (for re-rendering the current frame). */
+  now() {
+    return (performance.now() - this.start) / 1000
+  }
+}
+
+export interface FrameCells {
+  cols: number
+  rows: number
+  cw: number
+  ch: number
+  t: number
+  cellStyle: Recipe['cellStyle']
+  background: string
+  transparent: boolean
+  chars: string[]
+  /** r,g,b per cell, 0–255. */
+  rgb: Uint8Array
+  /** Dots style: radius, jitter x, jitter y per cell (0 radius = no dot). */
+  dot: Float32Array
 }
 
 const EMPTY: [number, number, number] = [-1, -1, -1]
@@ -739,10 +807,16 @@ function grade(grid: SourceGrid, recipe: Recipe): Graded {
     r = (r - 0.5) * contrast + 0.5 + brightness
     g = (g - 0.5) * contrast + 0.5 + brightness
     b = (b - 0.5) * contrast + 0.5 + brightness
-    // Lift shadows: ASCII on near-black loses everything below ~0.15 otherwise.
-    r = Math.pow(Math.min(1, Math.max(0, r)), 0.8)
-    g = Math.pow(Math.min(1, Math.max(0, g)), 0.8)
-    b = Math.pow(Math.min(1, Math.max(0, b)), 0.8)
+    // Tone curve (default 0.8 lifts shadows: ASCII on near-black loses everything below ~0.15).
+    const gm = recipe.gamma
+    r = Math.pow(Math.min(1, Math.max(0, r)), gm)
+    g = Math.pow(Math.min(1, Math.max(0, g)), gm)
+    b = Math.pow(Math.min(1, Math.max(0, b)), gm)
+    if (recipe.invert) {
+      r = 1 - r
+      g = 1 - g
+      b = 1 - b
+    }
     out.r[i] = r
     out.g[i] = g
     out.b[i] = b

@@ -126,3 +126,34 @@ test('an uploaded GIF plays as the source (frames change), no paid calls', async
   }
   expect(seen.size).toBeGreaterThan(1)
 })
+
+test('exports: SVG has vector dots, 4× PNG is 4× the pixels, HTML carries colors', async ({ users }) => {
+  test.setTimeout(90_000)
+  const [ada] = await users(['Ada'])
+  await ada.page.goto('/create')
+  await ada.page.getByRole('tab', { name: 'Object, no background' }).click()
+  await ada.page.getByRole('button', { name: 'Try the demo koi' }).click()
+  await ada.page.getByRole('button', { name: 'Bring it to life' }).click()
+  await ada.page.waitForURL(/\/p\/[\w-]+/, { timeout: 30_000 })
+  await expect(ada.page.getByRole('slider', { name: 'Gamma', exact: true })).toBeEnabled({ timeout: 20_000 })
+  await ada.page.waitForTimeout(800)
+
+  const grab = async (item: string) => {
+    await ada.page.getByRole('button', { name: 'Export' }).click()
+    const [dl] = await Promise.all([ada.page.waitForEvent('download'), ada.page.getByRole('menuitem', { name: item }).click()])
+    const path = await dl.path()
+    const { readFileSync } = await import('node:fs')
+    return readFileSync(path!)
+  }
+  const svg = (await grab('SVG (vector)')).toString()
+  expect(svg).toContain('<svg')
+  expect((svg.match(/<circle /g) ?? []).length).toBeGreaterThan(200)
+
+  const png4 = await grab('PNG 4×')
+  const png1 = await grab('PNG 1×')
+  const width = (b: Buffer) => b.readUInt32BE(16) // IHDR width
+  expect(width(png4)).toBeGreaterThanOrEqual(width(png1) * 4 - 4)
+
+  const html = (await grab('HTML (color)')).toString()
+  expect(html).toMatch(/<span style="color:#[0-9a-f]{6}">/)
+})

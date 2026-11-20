@@ -11,7 +11,10 @@ import {
   EFFECT_KINDS,
   EFFECT_SLIDERS,
   GLOBAL_SLIDERS,
+  GLYPH_LABELS,
   GLYPH_SETS,
+  BLEND_MODES,
+  type BlendMode,
   effectSchema,
   type Effect,
   type EffectKind,
@@ -105,7 +108,7 @@ export function Tweaks({ recipe, canWrite, peers, onGlobal, onEffect, onReplace,
         <div className="flex flex-wrap gap-1.5">
           {(Object.keys(GLYPH_SETS) as GlyphSet[]).map((g) => (
             <Chip key={g} active={recipe.glyphs === g} disabled={!canWrite} onClick={() => onGlobal('glyphs', g)}>
-              <span className="font-mono">{GLYPH_SETS[g].trim().slice(0, 5)}</span>
+              {GLYPH_LABELS[g]} <span className="ml-1 opacity-60">{GLYPH_SETS[g].trim().slice(0, 4)}</span>
             </Chip>
           ))}
         </div>
@@ -118,9 +121,32 @@ export function Tweaks({ recipe, canWrite, peers, onGlobal, onEffect, onReplace,
           <span className="mx-1 w-px bg-border" />
           {(['source', 'mono', 'duotone'] as const).map((m) => (
             <Chip key={m} active={recipe.colorMode === m} disabled={!canWrite} onClick={() => onGlobal('colorMode', m)}>
-              {m === 'source' ? 'Full color' : m === 'mono' ? 'Mono' : 'Duotone'}
+              {m === 'source' ? 'Original' : m === 'mono' ? 'Mono' : 'Duotone'}
             </Chip>
           ))}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <Chip active={recipe.invert} disabled={!canWrite} onClick={() => onGlobal('invert', !recipe.invert)}>
+            Invert
+          </Chip>
+          <Chip active={recipe.transparent} disabled={!canWrite} onClick={() => onGlobal('transparent', !recipe.transparent)}>
+            Transparent background
+          </Chip>
+          <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+            Blend
+            <select
+              value={recipe.blend}
+              disabled={!canWrite}
+              onChange={(e) => onGlobal('blend', e.target.value as BlendMode)}
+              className="h-7 rounded border border-input bg-background px-1.5 text-xs text-foreground disabled:opacity-50"
+            >
+              {(Object.keys(BLEND_MODES) as BlendMode[]).map((b) => (
+                <option key={b} value={b}>
+                  {b.replace('-', ' ')}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         <div className="mt-3 flex gap-4">
           <ColorField label="Ink" value={recipe.ink} disabled={!canWrite} onChange={(v) => onGlobal('ink', v)} />
