@@ -107,6 +107,31 @@ test('publish renders a GIF and lists the piece in the public gallery', async ({
   const res = await page.request.get(src!)
   expect(res.ok()).toBe(true)
   expect(res.headers()['content-type']).toContain('image/gif')
+
+  // Likes: Ada and Bo like it; the signed-out visitor sees the count live.
+  const [bo] = await users(['Bo'])
+  const card = (p: typeof page) => p.locator(`[data-testid="gallery-item"][data-title="${title}"]`)
+  const anonCount = card(page).getByTestId('like-count')
+  await expect(anonCount).toHaveText('0')
+  for (const u of [ada, bo]) {
+    await u.page.goto('/gallery')
+    await card(u.page).getByRole('button', { name: 'Like' }).click()
+    await expect(card(u.page).getByRole('button', { name: 'Unlike' })).toBeVisible({ timeout: 10_000 })
+  }
+  await expect(anonCount).toHaveText('2', { timeout: 10_000 })
+  await card(ada.page).getByRole('button', { name: 'Unlike' }).click()
+  await expect(anonCount).toHaveText('1', { timeout: 10_000 })
+
+  // uniqueOn: Ada likes from two tabs at once; the room keeps exactly one row.
+  const tab2 = await ada.page.context().newPage()
+  await tab2.goto('/gallery')
+  await expect(card(tab2).getByRole('button', { name: 'Like' })).toBeEnabled({ timeout: 15_000 })
+  await expect(card(ada.page).getByRole('button', { name: 'Like' })).toBeEnabled()
+  await Promise.all([card(ada.page).getByRole('button', { name: 'Like' }).click(), card(tab2).getByRole('button', { name: 'Like' }).click()])
+  await expect(anonCount).toHaveText('2', { timeout: 10_000 })
+  await page.waitForTimeout(1500)
+  await expect(anonCount).toHaveText('2')
+  await tab2.close()
   await anon.close()
 })
 

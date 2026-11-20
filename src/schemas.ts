@@ -13,6 +13,7 @@ import { settingsSchema } from './schemas/admin-schema'
 import { piecesSchema } from './schemas/pieces-schema'
 import { sendsSchema } from './schemas/sends-schema'
 import { generationsSchema } from './schemas/generations-schema'
+import { likesSchema } from './schemas/likes-schema'
 
 export const schemas: CollectionSchema[] = [
   usersSchema,
@@ -20,4 +21,5 @@ export const schemas: CollectionSchema[] = [
   piecesSchema,
   sendsSchema,
   generationsSchema,
+  likesSchema,
 ]
