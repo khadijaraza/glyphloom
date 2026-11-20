@@ -24,6 +24,28 @@ function unwrap<T>(res: unknown): T {
   return (r && 'data' in r ? r.data : r) as T
 }
 
+/**
+ * Return failures as data instead of throwing, so the calling agent sees the
+ * reason ("cols: must be ≤ 320") rather than a generic execution error.
+ */
+function safe<A>(fn: (args: A) => Promise<unknown>) {
+  return async (args: A) => {
+    try {
+      return await fn(args)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      // zod errors carry a JSON list of issues; condense them.
+      try {
+        const issues = JSON.parse(msg) as Array<{ path: unknown[]; message: string }>
+        if (Array.isArray(issues)) return { ok: false, error: issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') }
+      } catch {
+        /* not a zod error */
+      }
+      return { ok: false, error: msg }
+    }
+  }
+}
+
 export function buildGlyphloomTools(executor: UserToolExecutor, context?: AgentToolContext<Env>): ToolSet {
   const userId = context?.userId ?? ''
   const base = context ? `https://${context.env.APP_NAME}.app.space` : ''
@@ -58,7 +80,7 @@ export function buildGlyphloomTools(executor: UserToolExecutor, context?: AgentT
     glyphloom_list_pieces: tool({
       description: 'List the Glyphloom pieces you own or were invited to edit, with a link and a short summary of each one’s look.',
       inputSchema: z.object({}),
-      execute: async () => {
+      execute: safe(async () => {
         const { records } = unwrap<{ records: Piece[] }>(await executor('records.query', { collection: 'pieces', limit: 100 }))
         return records
           .filter((p) => p.createdBy === userId || (p.data.collaborators ?? []).includes(userId))
@@ -66,35 +88,35 @@ export function buildGlyphloomTools(executor: UserToolExecutor, context?: AgentT
             const r = safeRecipe(p.data.recipe)
             return { pieceId: p.recordId, title: p.data.title ?? 'Untitled', url: `${base}/p/${p.recordId}`, mine: p.createdBy === userId, inGallery: !!p.data.inGallery, ...(r ? summary(r) : {}) }
           })
-      },
+      }),
     }),
 
     glyphloom_get_piece: tool({
       description: 'Get one piece’s full settings (the recipe JSON the renderer draws from). Use before glyphloom_set_settings to see field names and current values.',
       inputSchema: z.object({ pieceId: z.string().describe('From glyphloom_list_pieces') }),
-      execute: async ({ pieceId }) => {
+      execute: safe(async ({ pieceId }) => {
         const { record } = unwrap<{ record: Piece }>(await executor('records.get', { collection: 'pieces', recordId: pieceId }))
         return { pieceId, title: record.data.title, prompt: record.data.prompt, url: `${base}/p/${pieceId}`, recipe: safeRecipe(record.data.recipe) }
-      },
+      }),
     }),
 
     glyphloom_set_settings: tool({
       description:
         'Change a piece’s settings directly, with no AI call and no cost. Pass a partial recipe: top-level fields replace (e.g. {"cols": 240, "cellStyle": "dots", "invert": true}); "effects" entries merge by id, {"id": "...", "remove": true} deletes one. Invalid values are rejected. Anyone with the piece open sees the change live.',
       inputSchema: z.object({ pieceId: z.string(), settings: z.record(z.string(), z.unknown()) }),
-      execute: async ({ pieceId, settings }) => {
+      execute: safe(async ({ pieceId, settings }) => {
         const { recipe } = await getEditable(pieceId)
         const next = applyPatch(recipe, settings)
         await save(pieceId, next)
         return { ok: true, url: `${base}/p/${pieceId}`, now: summary(next) }
-      },
+      }),
     }),
 
     glyphloom_refine_piece: tool({
       description:
         'Change a piece by describing it in plain words ("slower lanterns, warmer orange", "make it ink on paper"). Uses AI: it counts against your daily free allowance, then your own DeepSpace credits. Edits the current settings in place; never regenerates the image.',
       inputSchema: z.object({ pieceId: z.string(), instruction: z.string().min(2).max(400) }),
-      execute: async ({ pieceId, instruction }) => {
+      execute: safe(async ({ pieceId, instruction }) => {
         if (!context) throw new Error('Unavailable here')
         const { recipe } = await getEditable(pieceId)
         const result = await actions.refineRecipe({
@@ -108,14 +130,14 @@ export function buildGlyphloomTools(executor: UserToolExecutor, context?: AgentT
         if (!r.success || !r.data) throw new Error(r.error ?? 'Refine failed')
         await save(pieceId, r.data.recipe)
         return { ok: true, url: `${base}/p/${pieceId}`, patch: r.data.patch, now: summary(r.data.recipe) }
-      },
+      }),
     }),
 
     glyphloom_send_piece: tool({
       description:
         'Send a piece to someone by email (they get an invite link to watch it and tweak it with you). You must own or be invited to the piece. The email has no GIF preview when sent from an agent.',
       inputSchema: z.object({ pieceId: z.string(), toEmail: z.string().email(), note: z.string().max(280).optional() }),
-      execute: async ({ pieceId, toEmail, note }) => {
+      execute: safe(async ({ pieceId, toEmail, note }) => {
         if (!context) throw new Error('Unavailable here')
         const result = await actions.sendPiece({
           userId,
@@ -127,7 +149,7 @@ export function buildGlyphloomTools(executor: UserToolExecutor, context?: AgentT
         const r = result as { success: boolean; error?: string }
         if (!r.success) throw new Error(r.error ?? 'Send failed')
         return { ok: true, sentTo: toEmail }
-      },
+      }),
     }),
   }
 }
