@@ -117,9 +117,12 @@ test('an uploaded GIF plays as the source (frames change), no paid calls', async
   await ada.page.locator('input[type=file]').setInputFiles('tests/fixtures/pulse.gif')
   const canvas = ada.page.locator('canvas').first()
   await expect(canvas).toBeVisible({ timeout: 20_000 })
-  const snap = () => canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL())
-  const a = await snap()
-  await ada.page.waitForTimeout(500)
-  const b = await snap()
-  expect(a).not.toEqual(b)
+  // The fixture pulses symmetrically, so any two moments can show mirror-image
+  // frames; sample several and require more than one distinct picture.
+  const seen = new Set<string>()
+  for (let i = 0; i < 6; i++) {
+    seen.add(await canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL()))
+    await ada.page.waitForTimeout(170)
+  }
+  expect(seen.size).toBeGreaterThan(1)
 })
