@@ -124,7 +124,7 @@ export const PREVIEW_RECIPE: Recipe = parseRecipe({
 })
 
 /** A koi on black: the free "object mode" demo. */
-export function paintKoi(w = 900, h = 600): HTMLCanvasElement {
+export function paintKoi(w = 1800, h = 1100): HTMLCanvasElement {
   const c = document.createElement('canvas')
   c.width = w
   c.height = h
@@ -133,6 +133,8 @@ export function paintKoi(w = 900, h = 600): HTMLCanvasElement {
   ctx.fillRect(0, 0, w, h)
   const cx = w * 0.46
   const cy = h * 0.5
+  // The koi is painted at a fixed size, so in this larger frame it's small
+  // and has room to swim.
   // tail
   ctx.fillStyle = '#ff7a2e'
   ctx.beginPath()
@@ -174,7 +176,7 @@ export function paintKoi(w = 900, h = 600): HTMLCanvasElement {
 
 export const DEMO_OBJECT_RECIPE: Recipe = parseRecipe({
   title: 'Koi',
-  cols: 80,
+  cols: 120,
   glyphs: 'classic',
   cellStyle: 'tile',
   cutout: 0.35,
@@ -182,7 +184,7 @@ export const DEMO_OBJECT_RECIPE: Recipe = parseRecipe({
   contrast: 1.1,
   saturation: 1.2,
   effects: [
-    { id: 'koi-drift', kind: 'drift', label: 'Koi', mask: { subject: true }, speed: 0.5, intensity: 0.35, scale: 1 },
+    { id: 'koi-drift', kind: 'drift', label: 'Koi', mask: { subject: true }, speed: 0.6, intensity: 0.3, scale: 1 },
     { id: 'koi-shimmer', kind: 'glow', label: 'Scales', mask: { subject: true, lum: [0.6, 1] }, speed: 1.2, intensity: 0.35, scale: 0.6 },
   ],
 })
@@ -194,4 +196,75 @@ export const PREVIEW_OBJECT_RECIPE: Recipe = parseRecipe({
   grid: 0.5,
   saturation: 1.15,
   effects: [{ id: 'bob', kind: 'bob', label: 'Subject', mask: { subject: true }, speed: 0.8, intensity: 0.4 }],
+})
+
+/** A single pink water lily on black, painted fully open; the `bloom` effect closes and opens it. */
+export function paintLily(w = 1400, h = 820): HTMLCanvasElement {
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, w, h)
+  const cx = w / 2
+  const cy = h * 0.8
+
+  const petal = (angle: number, len: number, width: number, base: string, tip: string) => {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(angle)
+    const g = ctx.createLinearGradient(0, 0, 0, -len)
+    g.addColorStop(0, base)
+    g.addColorStop(1, tip)
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.moveTo(0, 0)
+    ctx.quadraticCurveTo(width, -len * 0.45, 0, -len)
+    ctx.quadraticCurveTo(-width, -len * 0.45, 0, 0)
+    ctx.fill()
+    // Dark outline: in ASCII the gaps between petals are what make them read as petals.
+    ctx.strokeStyle = '#000'
+    ctx.lineWidth = 10
+    ctx.stroke()
+    // A pale midrib down each petal.
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+    ctx.lineWidth = 4
+    ctx.beginPath()
+    ctx.moveTo(0, -len * 0.15)
+    ctx.lineTo(0, -len * 0.85)
+    ctx.stroke()
+    ctx.restore()
+  }
+  const deg = Math.PI / 180
+  // Outer ring: wide fan, deeper pink.
+  for (const a of [-84, -62, -41, -20, 0, 20, 41, 62, 84]) petal(a * deg, 560 - Math.abs(a) * 1.6, 120, '#c2255c', '#ffc9de')
+  // Inner ring: paler, more upright.
+  for (const a of [-52, -27, 0, 27, 52]) petal(a * deg, 450 - Math.abs(a) * 1.4, 100, '#e64980', '#fff0f6')
+  // Heart: a few cupped petals and the golden centre.
+  for (const a of [-14, 14]) petal(a * deg, 300, 74, '#f06595', '#ffffff')
+  const heart = ctx.createRadialGradient(cx, cy - 60, 4, cx, cy - 60, 100)
+  heart.addColorStop(0, '#fff3bf')
+  heart.addColorStop(1, '#f59f00')
+  ctx.fillStyle = heart
+  ctx.beginPath()
+  ctx.ellipse(cx, cy - 60, 90, 56, 0, 0, Math.PI * 2)
+  ctx.fill()
+  return c
+}
+
+export const LILY_RECIPE: Recipe = parseRecipe({
+  title: 'Lily',
+  cols: 150,
+  glyphs: 'classic',
+  cellStyle: 'glyph',
+  cutout: 0.3,
+  grid: 0.25,
+  contrast: 0.95,
+  brightness: -0.08,
+  saturation: 1.25,
+  effects: [
+    { id: 'lily-bloom', kind: 'bloom', label: 'Lily', mask: { subject: true }, speed: 0.55, intensity: 0.55, scale: 1 },
+    { id: 'lily-glow', kind: 'glow', label: 'Heart', mask: { subject: true, hue: [35, 60] }, speed: 0.8, intensity: 0.35, scale: 1.5 },
+    { id: 'lily-dust', kind: 'sparkle', label: 'Pollen', mask: { subject: true, lum: [0.7, 1] }, speed: 0.6, intensity: 0.25, scale: 1 },
+  ],
 })

@@ -24,6 +24,7 @@ export const EFFECT_KINDS = [
   'bob', // masked region floats up and down in place: a creature, a balloon, a boat
   'drift', // masked region travels across the frame and loops, bobbing: fish, birds, jellyfish
   'phase', // a shadow disc sweeps across the region: moon phases, eclipses
+  'bloom', // the region opens out from its base, holds, and closes: flowers, fans, fireworks
 ] as const
 export type EffectKind = (typeof EFFECT_KINDS)[number]
 
@@ -39,6 +40,7 @@ export const EFFECT_INFO: Record<EffectKind, { label: string; hint: string }> = 
   bob: { label: 'Bob', hint: 'Floats up and down in place.' },
   drift: { label: 'Drift', hint: 'Travels across and loops around.' },
   phase: { label: 'Phase', hint: 'A shadow sweeps across it, like the moon’s phases.' },
+  bloom: { label: 'Bloom', hint: 'Opens out from its base, holds, then closes.' },
 }
 
 export const GLYPH_SETS = {

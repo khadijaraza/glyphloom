@@ -6,7 +6,7 @@
 
 ## The main path
 
-1. **Create** (`/create`): type a prompt → `openai/generate-image` paints **4 versions** → pick one. Or upload an image, or use the free procedural demo scene.
+1. **Create** (`/create`): type a prompt → a quick Claude call rewrites it as a *single still frame* (so "a moon through its phases" becomes one moon, not a strip of moons) → `openai/generate-image` paints **1 or 4 versions** → pick one. Or upload an image, or use the free procedural demo scene.
 2. **Choreograph:** the client samples the image into a cell grid and summarizes its color regions (hue, brightness and vertical position stats). That summary, a 512 px thumbnail and the prompt go to `anthropic/chat-completion`, which returns a **recipe**: which effects to apply, to which region (mask), and how strongly.
 3. **Tweak** (`/p/:id`): every recipe number is a slider. "Refine with words" ("slower lanterns, warmer orange") asks Claude for a **small JSON patch** to the current recipe, so nothing regenerates. Undo is available.
 4. **Objects, not just scenes:** "Object, no background" mode prompts for an isolated subject. **Remove background** blanks out cells that match the image's border color, so the subject floats on its own. **Bob** and **Drift** move the whole subject (mask `{ subject: true }`). There's a free koi demo.
@@ -28,7 +28,7 @@
 | Source images, GIFs | R2 via `useR2Files({ scope: 'app' })` / `appFiles` in the worker | `create.tsx`, `actions/index.ts` |
 | Sign-in | DeepSpace auth (`AuthGate`, `AuthOverlay`) | `src/pages/(app)/(protected)/` |
 
-The renderer (`src/ascii/engine.ts`) is plain canvas-2D code with no dependencies. It samples the image to a grid, grades it (contrast, saturation, hue rotation, shadow lift), computes soft **masks** (by brightness, hue, saturation and vertical band), and runs eight effects per frame: `glow`, `rise`, `sway`, `wind`, `shimmer`, `sparkle`, `cycle` and `breathe`. Moving effects (`rise`, `wind`) translate the masked region and fill the hole it leaves with a per-row background estimate. The "Mosaic" style (solid cells with sparse glyphs, plus a faint grid) takes its visual ideas from [ascii-animals](https://github.com/DesignerStephen1/ascii-animals) (MIT). No code was copied.
+The renderer (`src/ascii/engine.ts`) is plain canvas-2D code with no dependencies. It samples the image to a grid, grades it (contrast, saturation, hue rotation, shadow lift), computes soft **masks** (by brightness, hue, saturation and vertical band), and runs twelve effects per frame: `glow`, `rise`, `sway`, `wind`, `shimmer`, `sparkle`, `cycle`, `breathe`, `bob`, `drift`, `phase` and `bloom`. Moving effects map each cell to a *fractional* source position and blend the neighboring cells' colors, so motion glides instead of snapping a cell at a time. They fill the hole they leave with a per-row background estimate (or with nothing, when the background has been removed). `phase` slides a soft shadow disc across a round subject (moon phases). `bloom` opens the subject out from its base and closes it again (the lily on the landing page). The "Mosaic" style (solid cells with sparse glyphs, plus a faint grid) takes its visual ideas from [ascii-animals](https://github.com/DesignerStephen1/ascii-animals) (MIT). No code was copied.
 
 ## Integrations, and why
 
@@ -48,13 +48,13 @@ The renderer (`src/ascii/engine.ts`) is plain canvas-2D code with no dependencie
 - each result would be a black box (no sliders, no patching, no live merging of two people's edits);
 - the quality would be inconsistent.
 
-A validated JSON recipe (zod, checked on the server before it leaves the worker) is safe and small to share. It also maps 1:1 to sliders and splits into per-field Yjs entries, so two people dragging different sliders never clobber each other. The cost is range: Glyphloom can only do what its eight effects can express.
+A validated JSON recipe (zod, checked on the server before it leaves the worker) is safe and small to share. It also maps 1:1 to sliders and splits into per-field Yjs entries, so two people dragging different sliders never clobber each other. The cost is range: Glyphloom can only do what its twelve effects can express. The moon is a good example. Until there was a `phase` effect, no prompt could make one moon change shape, because effects move and relight regions but can't redraw them.
 
 Smaller calls:
 - **Gallery publishing is owner-only in the UI**, but RBAC can't restrict single fields, so a collaborator could technically flip `inGallery` with a raw write. Moving publish into a server action would close that.
 - **Masks are color statistics, not segmentation.** They're cheap, deterministic and editable, but they can't isolate "the girl" from "the sky" when the two share colors.
 - **Source images live in the public R2 scope**, so link-shared pieces load for signed-out viewers. Don't upload anything private.
-- **Spend control** is a per-user daily cap in a server-written ledger (`generations`), because the owner pays for every call.
+- **Who pays: a free allowance first, then your own credits.** Each person gets a small daily allowance the app owner covers (4 images, 6 animations, 15 refinements). After that, or any time they tick "Always use my own credits", the server makes the call with *their* verified login token, so DeepSpace bills their account instead. `src/integrations.ts` sets billing per integration, not per call, so the per-call switch lives in one helper (`callIntegration` in `src/actions/index.ts`). A server-written ledger (`generations`) records who paid for what, and hard caps bound even self-paid use. Email invites stay owner-paid, because they're how people *without* an account get in. Choosing **1 version instead of 4** uses a quarter of the image allowance.
 
 ## Running it
 

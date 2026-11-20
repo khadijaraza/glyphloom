@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutations, useR2Files } from 'deepspace'
 import { ImageUp, Loader2, Sparkles, Wand2 } from 'lucide-react'
 import { AsciiCanvas } from '../../../components/AsciiCanvas'
+import { AllowanceBar } from '../../../components/AllowanceBar'
 import { Button, Textarea, useToast } from '@/components/ui'
 import { describeGrid, sampleImage } from '../../../ascii/engine'
 import { loadImage, thumbnailBase64 } from '../../../ascii/image'
@@ -53,6 +54,8 @@ export default function CreatePage() {
 
   const [prompt, setPrompt] = useState('')
   const [mode, setMode] = useState<Mode>('scene')
+  const [count, setCount] = useState<1 | 4>(1)
+  const [spent, setSpent] = useState(0)
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [picked, setPicked] = useState<number | null>(null)
   const [phase, setPhase] = useState<'idle' | 'generating' | 'uploading' | 'choreographing'>('idle')
@@ -65,13 +68,15 @@ export default function CreatePage() {
     setCandidates([])
     setPicked(null)
     try {
-      const { keys } = await api.generateSources(prompt.trim(), mode)
+      const { keys } = await api.generateSources(prompt.trim(), mode, count)
       const imgs = await Promise.all(keys.map((k) => loadImage(getUrl(k)).then((image) => ({ key: k, image }))))
       setCandidates(imgs)
+      if (imgs.length === 1) setPicked(0)
     } catch (e) {
       error('Generation failed', e instanceof Error ? e.message : undefined)
     } finally {
       setPhase('idle')
+      setSpent((n) => n + 1)
     }
   }
 
@@ -133,6 +138,7 @@ export default function CreatePage() {
     } catch (e) {
       error('Couldn’t animate that', e instanceof Error ? e.message : undefined)
       setPhase('idle')
+      setSpent((n) => n + 1)
     }
   }
 
@@ -141,7 +147,7 @@ export default function CreatePage() {
       <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">New piece</p>
       <h1 className="mt-2 text-2xl font-semibold text-foreground sm:text-3xl">What should come alive?</h1>
       <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-        Describe a scene and pick from four versions, or bring your own image. Describe how things move,
+        Describe a scene (one version, or four to pick from), or bring your own image. Describe how things move,
         too: “lanterns drifting up”, “grass bending in the wind”.
       </p>
 
@@ -175,9 +181,23 @@ export default function CreatePage() {
           }}
         />
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="inline-flex overflow-hidden rounded-lg border border-border" role="group" aria-label="How many versions">
+            {([1, 4] as const).map((n) => (
+              <button
+                key={n}
+                onClick={() => setCount(n)}
+                disabled={busy}
+                aria-pressed={count === n}
+                className={cn('h-10 px-3 text-xs', count === n ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground')}
+                title={n === 1 ? 'Cheapest: one image' : 'Four images to choose from (uses 4× the allowance)'}
+              >
+                {n === 1 ? '1 version' : '4 versions'}
+              </button>
+            ))}
+          </div>
           <Button onClick={generate} disabled={busy || prompt.trim().length < 3}>
             {phase === 'generating' ? <Loader2 className="animate-spin" /> : <Sparkles />}
-            {phase === 'generating' ? 'Painting 4 versions…' : 'Generate 4 versions'}
+            {phase === 'generating' ? (count === 1 ? 'Painting…' : 'Painting 4 versions…') : 'Generate'}
           </Button>
           <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={busy}>
             {phase === 'uploading' ? <Loader2 className="animate-spin" /> : <ImageUp />}
@@ -188,6 +208,7 @@ export default function CreatePage() {
             {mode === 'scene' ? 'Try the demo scene' : 'Try the demo koi'}
           </Button>
         </div>
+        <AllowanceBar refreshKey={spent} />
         <div className="mt-3 flex flex-wrap gap-2">
           {EXAMPLES[mode].map((ex) => (
             <button
@@ -203,7 +224,7 @@ export default function CreatePage() {
 
       {phase === 'generating' && (
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          {[0, 1, 2, 3].map((i) => (
+          {Array.from({ length: count }, (_, i) => i).map((i) => (
             <div key={i} className="loom-grid aspect-[3/2] animate-pulse rounded-xl border border-border bg-card" />
           ))}
         </div>

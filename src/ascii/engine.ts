@@ -174,22 +174,26 @@ interface PreparedEffect {
   weights: Float32Array
   /** Per-row background estimate used to fill the hole a moving region leaves. */
   fill?: Float32Array // rows * 3
-  /** Phase: the masked region's centroid (cells) and radius (column units). */
-  disc?: { cx: number; cy: number; r: number }
+  /** Phase/bloom: the masked region's centroid (cells), radius (column units) and base row. */
+  disc?: { cx: number; cy: number; r: number; base: number }
 }
 
 /** Centroid and equal-area radius of a mask, measured in column-width units. */
 function discOf(grid: SourceGrid, weights: Float32Array, rowScale: number) {
   let sx = 0, sy = 0, n = 0
+  const ys: number[] = []
   for (let i = 0; i < weights.length; i++) {
     if (weights[i] > 0.5) {
       sx += i % grid.cols
-      sy += Math.floor(i / grid.cols)
+      const y = Math.floor(i / grid.cols)
+      sy += y
+      ys.push(y)
       n++
     }
   }
-  if (!n) return { cx: grid.cols / 2, cy: grid.rows / 2, r: 1 }
-  return { cx: sx / n, cy: sy / n, r: Math.sqrt((n * rowScale) / Math.PI) }
+  if (!n) return { cx: grid.cols / 2, cy: grid.rows / 2, r: 1, base: grid.rows - 1 }
+  ys.sort((a, b) => a - b)
+  return { cx: sx / n, cy: sy / n, r: Math.sqrt((n * rowScale) / Math.PI), base: ys[Math.floor(ys.length * 0.92)] }
 }
 
 /** Graded color after global tone controls, per cell. */
@@ -310,7 +314,7 @@ export class AsciiEngine {
         const weights = maskWeights(grid, effect.mask, this.keep)
         const p: PreparedEffect = { effect, weights }
         if (isMover(effect.kind)) p.fill = rowFill(grid, this.graded!, weights)
-        if (effect.kind === 'phase') p.disc = discOf(grid, weights, 1 / CELL_ASPECT[this.recipe.cellStyle])
+        if (effect.kind === 'phase' || effect.kind === 'bloom') p.disc = discOf(grid, weights, 1 / CELL_ASPECT[this.recipe.cellStyle])
         return p
       })
     // Moving effects decide *which* cell shows, so they run before the rest.
@@ -377,6 +381,7 @@ export class AsciiEngine {
       for (let x = 0; x < cols; x++) {
         let src = y * cols + x
         let fillRgb: [number, number, number] | null = null
+        let blend: { fx: number; fy: number; wrapX: boolean; wrapY: boolean; weights: Float32Array } | null = null
         let dx = 0
         let m = 1
         let glyphOverride = -1
@@ -389,35 +394,55 @@ export class AsciiEngine {
             case 'rise':
             case 'wind':
             case 'bob':
-            case 'drift': {
+            case 'drift':
+            case 'bloom': {
               if (fillRgb === null && src !== y * cols + x) break // another mover already claimed it
-              // Each mover maps this cell to the source cell whose content should appear here.
-              // The whole masked layer moves as one sheet (per-band speeds tore objects apart).
-              let sx = x
-              let sy = y
+              // Each mover maps this cell to a *fractional* source position; the color is
+              // blended from the neighbouring cells so motion glides instead of snapping.
+              // The whole masked layer moves as one sheet.
+              let fx = x
+              let fy = y
               if (e.kind === 'rise') {
-                const shift = (((time * sp * (2 + 10 * k)) % rows) + rows) % rows
-                sy = Math.floor((y + shift) % rows)
-                sx = Math.min(cols - 1, Math.max(0, x + Math.round(Math.sin(time * sp * 0.7 + y * 0.15) * e.scale * 0.8)))
+                fy = y + (((time * sp * (2 + 10 * k)) % rows) + rows) % rows
+                fx = x + Math.sin(time * sp * 0.7 + y * 0.15) * e.scale * 0.8
               } else if (e.kind === 'wind') {
-                const shift = (((time * sp * (2 + 10 * k)) % cols) + cols) % cols
-                sx = Math.floor((x - shift + cols * 2) % cols)
+                fx = x - (((time * sp * (2 + 10 * k)) % cols) + cols) % cols
               } else if (e.kind === 'bob') {
-                sy = Math.min(rows - 1, Math.max(0, y + Math.round(Math.sin(time * sp * 1.4) * (1 + k * 4) * e.scale)))
-                sx = Math.min(cols - 1, Math.max(0, x + Math.round(Math.sin(time * sp * 0.7) * k * 1.5)))
-              } else {
-                const shift = (((time * sp * (1.5 + 6 * k)) % cols) + cols) % cols
-                sx = Math.floor((x - shift + cols * 2) % cols)
-                sy = Math.min(rows - 1, Math.max(0, y + Math.round(Math.sin(time * sp * 1.2 + x * 0.05) * (1 + k * 2.5) * e.scale)))
+                fy = y + Math.sin(time * sp * 1.4) * (1 + k * 4) * e.scale
+                fx = x + Math.sin(time * sp * 0.7) * k * 1.5
+              } else if (e.kind === 'drift') {
+                // Travel across and follow one slow sine path; a faint body wave on top.
+                const travel = time * sp * (1 + 4 * k)
+                const path = Math.sin((travel / cols) * Math.PI * 2 * e.scale) * rows * 0.18 * (0.4 + k)
+                fx = x - travel
+                fy = y - path + Math.sin(time * sp * 2.2 + x * 0.22) * 0.35
+              } else if (p.disc) {
+                // Bloom: open out from the base, hold, close. Horizontal opens more than vertical.
+                const c = (((time * sp * 0.1) % 1) + 1) % 1
+                const ease = (u: number) => u * u * (3 - 2 * u)
+                const open = c < 0.42 ? ease(c / 0.42) : c < 0.72 ? 1 : 1 - ease((c - 0.72) / 0.28)
+                const lo = 0.18 + (1 - k) * 0.3
+                const sxs = lo + (1 - lo) * open
+                const sys = 0.45 + 0.55 * open
+                fx = p.disc.cx + (x - p.disc.cx) / sxs
+                fy = p.disc.base + (y - p.disc.base) / sys
+                m *= 0.75 + 0.35 * open
               }
-              const cand = sy * cols + sx
-              if (p.weights[cand] > 0.5) {
+              const wrapX = e.kind === 'wind' || e.kind === 'drift'
+              const wrapY = e.kind === 'rise'
+              const nx = wrapX ? ((Math.round(fx) % cols) + cols) % cols : Math.round(fx)
+              const ny = wrapY ? ((Math.round(fy) % rows) + rows) % rows : Math.round(fy)
+              const inside = nx >= 0 && nx < cols && ny >= 0 && ny < rows
+              const cand = inside ? ny * cols + nx : -1
+              if (cand >= 0 && p.weights[cand] > 0.5) {
                 src = cand
                 fillRgb = null
+                blend = { fx, fy, wrapX, wrapY, weights: p.weights }
               } else if (p.weights[y * cols + x] > 0.2) {
                 // Fill the soft edge too, or a faint outline stays behind where the object was.
                 const f = p.fill!
                 fillRgb = this.keep ? EMPTY : [f[y * 3], f[y * 3 + 1], f[y * 3 + 2]]
+                blend = null
               }
               break
             }
@@ -507,6 +532,8 @@ export class AsciiEngine {
         if (fillRgb) {
           ;[r, g, b] = fillRgb
           l = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        } else if (blend && dx === 0) {
+          ;[r, g, b, l] = bilinear(graded, blend, cols, rows, src)
         } else {
           r = graded.r[src]
           g = graded.g[src]
@@ -571,8 +598,45 @@ export class AsciiEngine {
 
 const EMPTY: [number, number, number] = [-1, -1, -1]
 
+/**
+ * Blend the 2×2 cells around a fractional position, using only cells inside
+ * the moving mask (so edges don't smear into the background).
+ */
+function bilinear(
+  graded: Graded,
+  bl: { fx: number; fy: number; wrapX: boolean; wrapY: boolean; weights: Float32Array },
+  cols: number,
+  rows: number,
+  fallback: number,
+): [number, number, number, number] {
+  const x0 = Math.floor(bl.fx)
+  const y0 = Math.floor(bl.fy)
+  const tx = bl.fx - x0
+  const ty = bl.fy - y0
+  let r = 0, g = 0, b = 0, l = 0, wsum = 0
+  for (let j = 0; j < 2; j++) {
+    for (let i = 0; i < 2; i++) {
+      let xx = x0 + i
+      let yy = y0 + j
+      if (bl.wrapX) xx = ((xx % cols) + cols) % cols
+      if (bl.wrapY) yy = ((yy % rows) + rows) % rows
+      if (xx < 0 || xx >= cols || yy < 0 || yy >= rows) continue
+      const idx = yy * cols + xx
+      if (bl.weights[idx] <= 0.5) continue
+      const w = (i ? tx : 1 - tx) * (j ? ty : 1 - ty)
+      r += graded.r[idx] * w
+      g += graded.g[idx] * w
+      b += graded.b[idx] * w
+      l += graded.lum[idx] * w
+      wsum += w
+    }
+  }
+  if (wsum < 1e-4) return [graded.r[fallback], graded.g[fallback], graded.b[fallback], graded.lum[fallback]]
+  return [r / wsum, g / wsum, b / wsum, l / wsum]
+}
+
 function isMover(kind: Effect['kind']) {
-  return kind === 'rise' || kind === 'wind' || kind === 'bob' || kind === 'drift'
+  return kind === 'rise' || kind === 'wind' || kind === 'bob' || kind === 'drift' || kind === 'bloom'
 }
 
 function order(kind: Effect['kind']) {

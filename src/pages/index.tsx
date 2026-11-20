@@ -1,80 +1,61 @@
 /**
  * Landing page — static (no auth, no socket), prerendered for crawlers.
- * The hero is the real engine running the procedural demo scene, mounted
- * client-side only so prerender stays browser-free.
+ * One thing on stage: a lily blooming, drawn live by the real engine
+ * (mounted client-side only, so prerender stays browser-free).
  */
 
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Seo } from '../components/Seo'
 import { AsciiCanvas } from '../components/AsciiCanvas'
-import { DEMO_RECIPE, paintLanternScene } from '../ascii/demo'
+import { LILY_RECIPE, paintLily } from '../ascii/demo'
 import { seo } from '../seo'
 
-function HeroArt() {
+function Lily() {
   const [scene, setScene] = useState<HTMLCanvasElement | null>(null)
-  useEffect(() => setScene(paintLanternScene()), [])
+  useEffect(() => setScene(paintLily()), [])
   if (!scene) return <div className="aspect-[8/5] w-full" />
-  return <AsciiCanvas image={scene} recipe={DEMO_RECIPE} />
+  return <AsciiCanvas image={scene} recipe={{ ...LILY_RECIPE, background: '#000000', grid: 0 }} />
 }
-
-const STEPS = [
-  ['Describe or upload', 'Type a scene (“lanterns rising over a lake”) and pick from four painted versions, or bring a photo.'],
-  ['It starts moving', 'An AI picks what should move and how: glowing lanterns, swaying grass, rippling water, falling rain.'],
-  ['Tweak without starting over', 'Sliders for everything, or say “slower, warmer” and only that changes.'],
-  ['Send it to someone', 'It shows up in their inbox instantly, or by email. Open it together and drag the sliders at the same time.'],
-]
 
 export default function Landing() {
   return (
     <>
       <Seo {...seo} path="/" />
-      <div data-testid="static-landing" className="min-h-screen bg-background text-foreground">
-        <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+      <div data-testid="static-landing" className="flex min-h-screen flex-col bg-black text-foreground">
+        <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-5">
           <span className="font-mono text-sm font-semibold tracking-wide">
             glyph<span className="text-primary">loom</span>
           </span>
-          <Link to="/home" className="text-sm text-muted-foreground hover:text-foreground">
-            Open studio →
-          </Link>
+          <nav className="flex gap-5 text-sm text-muted-foreground">
+            <Link to="/gallery" className="hover:text-foreground">
+              Gallery
+            </Link>
+            <Link to="/home" className="hover:text-foreground">
+              Studio
+            </Link>
+          </nav>
         </header>
 
-        <section className="mx-auto max-w-6xl px-6 pb-10 pt-6">
-          <div className="overflow-hidden rounded-2xl border border-border bg-[#07070c] shadow-2xl shadow-black/60">
-            <HeroArt />
+        <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-6 pb-16">
+          <div className="w-full">
+            <Lily />
           </div>
-          <div className="mt-10 grid gap-8 md:grid-cols-[1.2fr_1fr] md:items-end">
-            <div>
-              <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-                Pictures that move,
-                <br />
-                <span className="text-primary">made of letters.</span>
-              </h1>
-              <p className="mt-4 max-w-lg text-muted-foreground">
-                Glyphloom turns a sentence or a photo into animated ASCII art. Tune it by hand or in plain words,
-                then send it to a friend who can tweak it with you live.
-              </p>
-            </div>
-            <div className="flex gap-3 md:justify-end">
-              <Link to="/create" className="inline-flex items-center rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-                Make one
-              </Link>
-              <Link to="/gallery" className="inline-flex items-center rounded-full border border-border px-5 py-2.5 text-sm text-foreground hover:bg-accent">
-                See the gallery
-              </Link>
-            </div>
+          <h1 className="mt-6 text-center font-mono text-2xl tracking-tight sm:text-3xl">
+            pictures that move, made of letters
+          </h1>
+          <p className="mt-3 max-w-md text-center text-sm text-muted-foreground">
+            Describe something or upload a photo. Glyphloom turns it into living ASCII you can tweak and send to a friend.
+          </p>
+          <div className="mt-7 flex gap-3">
+            <Link to="/create" className="rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90">
+              Make one
+            </Link>
+            <Link to="/gallery" className="rounded-full border border-border px-5 py-2.5 text-sm text-foreground hover:bg-accent">
+              See the gallery
+            </Link>
           </div>
-        </section>
-
-        <section className="mx-auto grid max-w-6xl gap-4 px-6 pb-20 sm:grid-cols-2 lg:grid-cols-4">
-          {STEPS.map(([title, body], i) => (
-            <div key={title} className="rounded-xl border border-border bg-card p-5">
-              <p className="font-mono text-xs text-primary">0{i + 1}</p>
-              <h2 className="mt-2 font-medium">{title}</h2>
-              <p className="mt-1.5 text-sm text-muted-foreground">{body}</p>
-            </div>
-          ))}
-        </section>
+        </main>
       </div>
     </>
   )

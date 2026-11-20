@@ -13,14 +13,25 @@
  * `applyPatch` (zod) before they leave the worker.
  */
 
-import { appFiles } from 'deepspace/worker'
+import { apiWorkerFetch, appFiles, normalizeApiError, splitIntegrationEndpoint } from 'deepspace/worker'
 import type { ActionHandler, ActionResult, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker'
 import { applyPatch, EFFECT_KINDS, GLYPH_SETS, parseRecipe, type Recipe } from '../ascii/recipe'
 
-/** Per-user daily caps on owner-billed calls. */
-const DAILY_LIMITS = { image: 12, recipe: 40, refine: 80, email: 20 } as const
-type Kind = keyof typeof DAILY_LIMITS
+/**
+ * Who pays. Each person gets a daily allowance the app owner covers ("free");
+ * past it, or whenever they choose, calls are made with the caller's own JWT so
+ * the platform bills their DeepSpace credits. `hardCap` bounds even self-paid
+ * use so a runaway client can't drain someone's account.
+ */
+export const BILLING = {
+  image: { free: 4, hardCap: 60 }, // counted in images: one 4-up = 4, a single = 1
+  recipe: { free: 6, hardCap: 200 },
+  refine: { free: 15, hardCap: 400 },
+  email: { free: 20, hardCap: 20 }, // always owner-paid: invites reach people with no account
+} as const
+type Kind = keyof typeof BILLING
+type Payer = 'owner' | 'caller'
 
 const RECIPE_MODEL = 'claude-sonnet-5-5'
 const FALLBACK_MODEL = 'claude-haiku-5-5'
@@ -28,21 +39,66 @@ const FALLBACK_MODEL = 'claude-haiku-5-5'
 const fail = (error: string): ActionResult<never> => ({ success: false, error })
 const today = () => new Date().toISOString().slice(0, 10)
 
-/** Count today's calls of `kind` and refuse past the cap; records the call when allowed. */
-async function meter(tools: ActionTools, userId: string, kind: Kind): Promise<string | null> {
-  const day = today()
-  const r = await tools.query('generations', { where: { userId, kind, day }, limit: 200 })
-  const used = r.success ? r.data.records.length : 0
-  if (used >= DAILY_LIMITS[kind]) return `Daily limit reached for ${kind} (${DAILY_LIMITS[kind]}/day). Try again tomorrow.`
-  await tools.create('generations', { userId, kind, day })
-  return null
+async function usedToday(tools: ActionTools, userId: string, kind: Kind) {
+  const r = await tools.query<{ units?: number; payer?: Payer }>('generations', { where: { userId, kind, day: today() }, limit: 500 })
+  let owner = 0
+  let total = 0
+  for (const rec of r.success ? r.data.records : []) {
+    const d = rec.data as { units?: number; payer?: Payer }
+    const u = d.units ?? 1
+    total += u
+    if (d.payer !== 'caller') owner += u
+  }
+  return { owner, total }
 }
 
-/** tools.integration returns the proxy body; normalize to { success, data | error }. */
-async function callIntegration<T>(tools: ActionTools, endpoint: string, body: Record<string, unknown>): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+/**
+ * Decide who pays for `units` of `kind`, record it, and return the payer, or
+ * an error string when even self-paid use is over the hard cap.
+ */
+async function meter(tools: ActionTools, userId: string, kind: Kind, opts: { units?: number; ownCredits?: boolean } = {}): Promise<{ payer: Payer } | { error: string }> {
+  const units = opts.units ?? 1
+  const { free, hardCap } = BILLING[kind]
+  const used = await usedToday(tools, userId, kind)
+  if (used.total + units > hardCap) return { error: `Daily limit reached for ${kind} (${hardCap}/day). Try again tomorrow.` }
+  const payer: Payer = kind === 'email' ? 'owner' : !opts.ownCredits && used.owner + units <= free ? 'owner' : 'caller'
+  await tools.create('generations', { userId, kind, day: today(), units, payer })
+  return { payer }
+}
+
+interface Billed {
+  tools: ActionTools
+  env: Env
+  callerJwt: string
+  payer: Payer
+}
+
+/**
+ * Call an integration as the chosen payer. Owner-paid calls use the built-in
+ * routing (src/integrations.ts: 'developer'); caller-paid calls forward the
+ * caller's verified JWT, which the api-worker bills instead.
+ */
+async function callIntegration<T>(b: Billed, endpoint: string, body: Record<string, unknown>): Promise<{ ok: true; data: T } | { ok: false; error: string; code?: string }> {
   try {
-    const res = (await tools.integration(endpoint, body)) as { success?: boolean; data?: T; error?: string }
-    if (res && res.success === false) return { ok: false, error: res.error ?? `${endpoint} failed` }
+    let res: { success?: boolean; data?: T; error?: string; code?: string }
+    if (b.payer === 'owner') {
+      res = (await b.tools.integration(endpoint, body)) as typeof res
+    } else {
+      const target = splitIntegrationEndpoint(endpoint)
+      if (!target) return { ok: false, error: `Bad endpoint ${endpoint}` }
+      const r = await apiWorkerFetch(b.env, target.path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${b.callerJwt}` },
+        body: JSON.stringify(body),
+      })
+      const payload = (await r.json().catch(() => ({}))) as Record<string, unknown>
+      res = !r.ok || payload.success === false ? { success: false, ...normalizeApiError(r.status, payload) } : (payload as typeof res)
+    }
+    if (res && res.success === false) {
+      if (res.code === 'insufficient_credits' && b.payer === 'caller')
+        return { ok: false, code: res.code, error: 'You’ve used today’s free allowance, and your own DeepSpace credits are empty. Top up at dashboard.deep.space, or come back tomorrow.' }
+      return { ok: false, code: res.code, error: res.error ?? `${endpoint} failed` }
+    }
     if (res && 'data' in res && res.data !== undefined) return { ok: true, data: res.data as T }
     return { ok: true, data: res as unknown as T }
   } catch (err) {
@@ -51,10 +107,10 @@ async function callIntegration<T>(tools: ActionTools, endpoint: string, body: Re
 }
 
 type ClaudeContent = Array<Record<string, unknown>> | string
-async function askClaude(tools: ActionTools, system: string, content: ClaudeContent, maxTokens = 2000): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+async function askClaude(b: Billed, system: string, content: ClaudeContent, maxTokens = 2000): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   let lastError = 'AI call failed'
   for (const model of [RECIPE_MODEL, FALLBACK_MODEL]) {
-    const r = await callIntegration<{ content?: Array<{ type: string; text?: string }> }>(tools, 'anthropic/chat-completion', {
+    const r = await callIntegration<{ content?: Array<{ type: string; text?: string }> }>(b, 'anthropic/chat-completion', {
       model,
       max_tokens: maxTokens,
       temperature: 0.7,
@@ -81,8 +137,8 @@ function extractJson(text: string): unknown {
 }
 
 /** Rewrite a possibly time-based request into a prompt for one still frame. Falls back to the original. */
-async function toSingleFrame(tools: ActionTools, prompt: string): Promise<string> {
-  const r = await callIntegration<{ content?: Array<{ type: string; text?: string }> }>(tools, 'anthropic/chat-completion', {
+async function toSingleFrame(b: Billed, prompt: string): Promise<string> {
+  const r = await callIntegration<{ content?: Array<{ type: string; text?: string }> }>(b, 'anthropic/chat-completion', {
     model: FALLBACK_MODEL,
     max_tokens: 200,
     temperature: 0,
@@ -125,6 +181,9 @@ and use bob/drift for the subject itself plus small glow/sparkle accents. For fu
   phase   — a soft shadow disc sweeps across a round subject on a loop: moon phases (full → new → full), eclipses, a planet turning.
             Use mask {"subject": true} (with cutout) or a tight lum/hue mask on the disc. speed ~0.5-1 (one cycle ≈ 8 s at speed 1), intensity = how dark the shadow gets.
 
+  bloom   — the subject opens out from its base, holds, then closes on a loop: a flower blossoming, a fan, a firework.
+            Use mask {"subject": true} or a hue mask on the petals. intensity = how closed the bud gets.
+
 Motion beats multiplication: the image is ONE frame. If the person describes something changing over time (phases, blooming, growing,
 day turning to night), express that change with effects on a single subject — never expect multiple copies in the picture.
 
@@ -140,21 +199,33 @@ Rules of taste:
 const ALLOWED_KINDS = EFFECT_KINDS.join(', ')
 
 export const actions: Record<string, ActionHandler<Env>> = {
+  /** Today's free allowance left per kind, for the UI. Free to call. */
+  allowance: async ({ userId, tools }) => {
+    const out: Record<string, { free: number; usedFree: number }> = {}
+    for (const kind of ['image', 'recipe', 'refine'] as const) {
+      const used = await usedToday(tools, userId, kind)
+      out[kind] = { free: BILLING[kind].free, usedFree: Math.min(used.owner, BILLING[kind].free) }
+    }
+    return { success: true, data: out }
+  },
+
   /** Text prompt → four candidate source images stored in the app's public R2 scope. */
-  generateSources: async ({ userId, params, tools, env }) => {
+  generateSources: async ({ userId, params, tools, env, callerJwt }) => {
     const prompt = String(params.prompt ?? '').trim().slice(0, 600)
     if (prompt.length < 3) return fail('Describe what you want to see.')
-    const limited = await meter(tools, userId, 'image')
-    if (limited) return fail(limited)
+    const n = params.count === 1 ? 1 : 4
+    const m = await meter(tools, userId, 'image', { units: n, ownCredits: params.ownCredits === true })
+    if ('error' in m) return fail(m.error)
+    const b: Billed = { tools, env, callerJwt, payer: m.payer }
 
     // Image models draw one still frame. A prompt about change over time ("a moon
     // through all its phases") gets painted as a strip of copies, so first rewrite it
     // into a single-frame description; the motion step handles the change itself.
-    const still = await toSingleFrame(tools, prompt)
+    const still = await toSingleFrame(b, prompt)
 
-    const r = await callIntegration<{ images: string[] }>(tools, 'openai/generate-image', {
+    const r = await callIntegration<{ images: string[] }>(b, 'openai/generate-image', {
       model: 'gpt-image-1-mini',
-      n: 4,
+      n,
       size: '1536x1024',
       quality: 'low',
       prompt:
@@ -186,16 +257,17 @@ export const actions: Record<string, ActionHandler<Env>> = {
       }
     }
     if (!keys.length) return fail('Image generation returned nothing usable. Try again.')
-    return { success: true, data: { keys, stillPrompt: still } }
+    return { success: true, data: { keys, stillPrompt: still, payer: m.payer } }
   },
 
   /** Prompt + client-computed color summary (+ small JPEG) → a validated recipe. */
-  buildRecipe: async ({ userId, params, tools }) => {
+  buildRecipe: async ({ userId, params, tools, env, callerJwt }) => {
     const prompt = String(params.prompt ?? '').slice(0, 600)
     const summary = String(params.summary ?? '').slice(0, 3000)
     const thumb = typeof params.thumbnail === 'string' && params.thumbnail.length < 400_000 ? params.thumbnail : null
-    const limited = await meter(tools, userId, 'recipe')
-    if (limited) return fail(limited)
+    const m = await meter(tools, userId, 'recipe', { ownCredits: params.ownCredits === true })
+    if ('error' in m) return fail(m.error)
+    const b: Billed = { tools, env, callerJwt, payer: m.payer }
 
     const mode = params.mode === 'object' ? 'OBJECT (isolated subject, remove the background)' : 'SCENE'
     const instruction = `Mode: ${mode}
@@ -212,9 +284,9 @@ Return ONE JSON object matching the recipe fields. Effect kinds allowed: ${ALLOW
         ]
       : instruction
 
-    let reply = await askClaude(tools, RECIPE_GUIDE, content)
+    let reply = await askClaude(b, RECIPE_GUIDE, content)
     // If the vision block is refused, retry text-only rather than failing the flow.
-    if (!reply.ok && thumb) reply = await askClaude(tools, RECIPE_GUIDE, instruction)
+    if (!reply.ok && thumb) reply = await askClaude(b, RECIPE_GUIDE, instruction)
     if (!reply.ok) return fail(reply.error)
     try {
       const recipe = parseRecipe(extractJson(reply.text))
@@ -225,7 +297,7 @@ Return ONE JSON object matching the recipe fields. Effect kinds allowed: ${ALLOW
   },
 
   /** Small natural-language edit → JSON patch → re-validated recipe. Never regenerates. */
-  refineRecipe: async ({ userId, params, tools }) => {
+  refineRecipe: async ({ userId, params, tools, env, callerJwt }) => {
     const instruction = String(params.instruction ?? '').trim().slice(0, 400)
     if (!instruction) return fail('Say what to change.')
     let base: Recipe
@@ -234,11 +306,12 @@ Return ONE JSON object matching the recipe fields. Effect kinds allowed: ${ALLOW
     } catch {
       return fail('Current recipe is invalid.')
     }
-    const limited = await meter(tools, userId, 'refine')
-    if (limited) return fail(limited)
+    const m = await meter(tools, userId, 'refine', { ownCredits: params.ownCredits === true })
+    if ('error' in m) return fail(m.error)
+    const b: Billed = { tools, env, callerJwt, payer: m.payer }
 
     const reply = await askClaude(
-      tools,
+      b,
       `${RECIPE_GUIDE}
 
 You are now EDITING an existing recipe. Return a minimal JSON PATCH, not the whole recipe:
@@ -302,13 +375,13 @@ You are now EDITING an existing recipe. Return a minimal JSON PATCH, not the who
     if (!created.success) return fail(created.error)
 
     if (toEmail) {
-      const limited = await meter(tools, userId, 'email')
-      if (limited) return fail(limited)
+      const m = await meter(tools, userId, 'email')
+      if ('error' in m) return fail(m.error)
       const base = `https://${env.APP_NAME}.app.space`
       const link = `${base}/p/${pieceId}?invite=${inviteToken}`
       const gifUrl = gifKey ? `${base}/api/files/${gifKey.split('/').map(encodeURIComponent).join('/')}?scope=app` : ''
       const safe = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]!)
-      const mail = await callIntegration(tools, 'email/send', {
+      const mail = await callIntegration({ tools, env, callerJwt: '', payer: 'owner' }, 'email/send', {
         from: `${fromName.replace(/[<>"]/g, '')} via Glyphloom <${env.APP_NAME}@app.space>`,
         to: toEmail,
         subject: `${fromName} made you something: “${title}”`,
