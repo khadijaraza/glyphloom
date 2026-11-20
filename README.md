@@ -16,6 +16,17 @@
 
 **Moving pictures in Gmail.** Email clients won't run the renderer and strip video, but they play animated GIFs inline. Sending by email renders 3 seconds of the piece to a GIF in the browser (`gifenc`, one shared palette so colors don't flicker), stores it publicly in R2, and embeds it in the invite. The server builds the image URL from a validated key, never from a client-supplied URL. The gallery reuses the same GIFs as thumbnails, so a page of 30 animations costs no rendering.
 
+7. **Likes** in the gallery, with a **Most loved** sort. Signed-out visitors see counts live.
+8. **Agent tools:** the same tools power the website and any local coding agent through the DeepSpace CLI, running with the user's own login and permissions:
+   ```bash
+   npx deepspace agent tools glyphloom --json
+   npx deepspace agent invoke glyphloom glyphloom_set_settings --input-file edit.json --json
+   # edit.json: {"pieceId": "...", "settings": {"cellStyle": "dots", "cols": 240, "invert": true}}
+   ```
+   - The tools are `list_pieces`, `get_piece`, `set_settings` (free, deterministic, validated), `refine_piece` (plain words, same allowance and billing as the site) and `send_piece`.
+   - Agents can't write the live Yjs doc, so an agent edit lands in `agentRecipe`/`agentAt`, and any open editor applies it to the live doc once. Everyone watching sees the agent's change happen.
+   - Failures come back as readable errors ("cols: Too big: expected number to be <=320").
+
 ## How it's built
 
 | Concern | DeepSpace primitive | Where |
@@ -26,6 +37,8 @@
 | Live co-tweaking | Record-bound Yjs doc (`useYjsField('pieces', id, 'live')`); write access follows the piece's `update: 'collaborator'` | `src/lib/useLiveRecipe.ts` |
 | Who's here / who's holding a slider | Yjs awareness on the same socket | `useLiveRecipe.ts` |
 | Owner-billed AI + email, ownership checks, spend caps | Server actions (`tools.integration`, RBAC-bypassing writes after explicit checks) | `src/actions/index.ts` |
+| One like per person per piece | `uniqueOn: ['pieceId','userId']` + `userBound` user column (a forged or concurrent second like is refused by the room) | `likes-schema.ts` |
+| Agent tools for the web assistant and local agents | `buildTools` + `registerAgent`; reads via the caller-scoped executor, paid work via the same server actions | `src/ai/glyphloom-tools.ts` |
 | Source images, GIFs | R2 via `useR2Files({ scope: 'app' })` / `appFiles` in the worker | `create.tsx`, `actions/index.ts` |
 | Sign-in | DeepSpace auth (`AuthGate`, `AuthOverlay`) | `src/pages/(app)/(protected)/` |
 
