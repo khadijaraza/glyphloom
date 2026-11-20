@@ -10,6 +10,7 @@
 import { applyPalette, GIFEncoder, quantize } from 'gifenc'
 import { AsciiEngine } from './engine'
 import type { Recipe } from './recipe'
+import { AnimatedSource, type Source } from './source'
 
 export interface GifOptions {
   width?: number
@@ -18,14 +19,16 @@ export interface GifOptions {
 }
 
 export async function renderGif(
-  image: CanvasImageSource & { width: number; height: number },
+  image: Source,
   recipe: Recipe,
-  { width = 520, seconds = 3, fps = 12 }: GifOptions = {},
+  { width = 520, seconds: secondsOpt, fps = 12 }: GifOptions = {},
   onProgress?: (p: number) => void,
 ): Promise<Blob> {
+  // A GIF source loops on its own length (capped); a still loops every 3 s.
+  const seconds = secondsOpt ?? (image instanceof AnimatedSource ? Math.min(6, Math.max(1, image.duration / 1000)) : 3)
   const canvas = document.createElement('canvas')
-  // Fewer columns at GIF size keeps glyphs legible and the file small.
-  const engine = new AsciiEngine(canvas, { ...recipe, cols: Math.min(recipe.cols, 96) }, { dpr: 1 })
+  // Fewer columns at GIF size keeps detail legible and the file small.
+  const engine = new AsciiEngine(canvas, { ...recipe, cols: Math.min(recipe.cols, recipe.cellStyle === 'dots' ? 170 : 96) }, { dpr: 1 })
   engine.paused = true
   engine.setImage(image)
   engine.setWidth(width)

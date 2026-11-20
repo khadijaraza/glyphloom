@@ -110,9 +110,9 @@ export function Tweaks({ recipe, canWrite, peers, onGlobal, onEffect, onReplace,
           ))}
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {(['glyph', 'tile'] as const).map((s) => (
+          {(['glyph', 'dots', 'tile'] as const).map((s) => (
             <Chip key={s} active={recipe.cellStyle === s} disabled={!canWrite} onClick={() => onGlobal('cellStyle', s)}>
-              {s === 'glyph' ? 'Characters' : 'Mosaic'}
+              {s === 'glyph' ? 'Characters' : s === 'dots' ? 'Dots' : 'Mosaic'}
             </Chip>
           ))}
           <span className="mx-1 w-px bg-border" />

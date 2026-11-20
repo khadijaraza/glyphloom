@@ -1,11 +1,12 @@
 # Glyphloom
 
-**Animated ASCII art you make together.** Describe a scene or upload a photo. Glyphloom pixelizes it, turns it into colored characters, and makes parts of it move: lanterns glow and rise, grass sways, water shimmers, stars sparkle. Fine-tune it with sliders or plain words without starting over, then send it to someone. It lands in their inbox instantly (or by email), and you can drag the sliders together, live.
+**Animated ASCII art you make together.** Describe a scene, or upload a photo or a GIF. Glyphloom pixelizes it, turns it into colored characters, and makes parts of it move: lanterns glow and rise, grass sways, water shimmers, stars sparkle. Fine-tune it with sliders or plain words without starting over, then send it to someone. It lands in their inbox instantly (or by email), and you can drag the sliders together, live.
 
 **Live:** https://glyphloom.app.space
 
 ## The main path
 
+0. **Sources:** a text prompt, an uploaded image, or an **uploaded GIF**. GIFs are decoded in the browser (`gifuct-js`, disposal-aware compositing, up to 72 frames). The engine re-samples its grid whenever the GIF's frame changes, so the ASCII plays along with the source, and effects layer on top.
 1. **Create** (`/create`): type a prompt → a quick Claude call rewrites it as a *single still frame* (so "a moon through its phases" becomes one moon, not a strip of moons) → `openai/generate-image` paints **1 or 4 versions** → pick one. Or upload an image, or use the free procedural demo scene.
 2. **Choreograph:** the client samples the image into a cell grid and summarizes its color regions (hue, brightness and vertical position stats). That summary, a 512 px thumbnail and the prompt go to `anthropic/chat-completion`, which returns a **recipe**: which effects to apply, to which region (mask), and how strongly.
 3. **Tweak** (`/p/:id`): every recipe number is a slider. "Refine with words" ("slower lanterns, warmer orange") asks Claude for a **small JSON patch** to the current recipe, so nothing regenerates. Undo is available.
@@ -28,7 +29,7 @@
 | Source images, GIFs | R2 via `useR2Files({ scope: 'app' })` / `appFiles` in the worker | `create.tsx`, `actions/index.ts` |
 | Sign-in | DeepSpace auth (`AuthGate`, `AuthOverlay`) | `src/pages/(app)/(protected)/` |
 
-The renderer (`src/ascii/engine.ts`) is plain canvas-2D code with no dependencies. It samples the image to a grid, grades it (contrast, saturation, hue rotation, shadow lift), computes soft **masks** (by brightness, hue, saturation and vertical band), and runs twelve effects per frame: `glow`, `rise`, `sway`, `wind`, `shimmer`, `sparkle`, `cycle`, `breathe`, `bob`, `drift`, `phase` and `bloom`. Moving effects map each cell to a *fractional* source position and blend the neighboring cells' colors, so motion glides instead of snapping a cell at a time. They fill the hole they leave with a per-row background estimate (or with nothing, when the background has been removed). `phase` slides a soft shadow disc across a round subject (moon phases). `bloom` opens the subject out from its base and closes it again (the lily on the landing page). The "Mosaic" style (solid cells with sparse glyphs, plus a faint grid) takes its visual ideas from [ascii-animals](https://github.com/DesignerStephen1/ascii-animals) (MIT). No code was copied.
+The renderer (`src/ascii/engine.ts`) is plain canvas-2D code with no dependencies. It has three cell styles: **Characters** (colored glyphs), **Mosaic** (solid cells with sparse glyphs), and **Dots**, a true stipple. In Dots, each cell keeps a jittered round dot with a probability that follows brightness, so dot *density* draws the image, at 200–300 columns. The demos (lily, koi) use Dots. It samples the image to a grid, grades it (contrast, saturation, hue rotation, shadow lift), computes soft **masks** (by brightness, hue, saturation and vertical band), and runs twelve effects per frame: `glow`, `rise`, `sway`, `wind`, `shimmer`, `sparkle`, `cycle`, `breathe`, `bob`, `drift`, `phase` and `bloom`. Moving effects map each cell to a *fractional* source position and blend the neighboring cells' colors, so motion glides instead of snapping a cell at a time. They fill the hole they leave with a per-row background estimate (or with nothing, when the background has been removed). `phase` slides a soft shadow disc across a round subject (moon phases). `bloom` opens the subject out from its base and closes it again (the lily on the landing page). The "Mosaic" style (solid cells with sparse glyphs, plus a faint grid) takes its visual ideas from [ascii-animals](https://github.com/DesignerStephen1/ascii-animals) (MIT). No code was copied.
 
 ## Integrations, and why
 
@@ -73,5 +74,6 @@ npx deepspace deploy
 - **Version history** is an in-memory undo stack per session, not saved snapshots or an A/B compare.
 - **Background removal is color-based** (it matches the border color). It works well for "subject on a plain background" and poorly for busy photos. Real segmentation would need a model call.
 - **Masks can't be edited by hand** in the UI (only by the AI or by refine). The next step would be click-to-select a region on the canvas, deriving the mask from the clicked cell's color.
-- **Performance:** about 13k cells redrawn with `fillText` at ~40 fps is fine on a laptop. Phones would want a glyph atlas or WebGL.
+- **Performance:** Dots at 260 columns is about 40k cells a frame, which is fine on a laptop at ~40 fps. Phones get fewer columns automatically (a minimum cell size per style), but a WebGL path would be the real fix.
+- **Swim motion assumes the fish faces its direction of travel** (head on the leading edge). A GIF source of a swimming creature will always look better than `drift` on a still.
 - **Inbox thumbnails** load their source image each, which is fine for tens of pieces but not hundreds.

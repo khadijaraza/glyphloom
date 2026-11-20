@@ -7,10 +7,11 @@
 import { useEffect, useRef } from 'react'
 import { AsciiEngine } from '../ascii/engine'
 import type { Recipe } from '../ascii/recipe'
+import type { Source } from '../ascii/source'
 import { cn } from '../lib/utils'
 
 interface Props {
-  image: (CanvasImageSource & { width: number; height: number }) | null
+  image: Source | null
   recipe: Recipe
   highlight?: string | null
   /** Draw a single still frame instead of animating (cheap thumbnails). */

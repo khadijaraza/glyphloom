@@ -35,6 +35,7 @@
     "clsx": "^2.1.0",
     "deepspace": "0.44.2",
     "gifenc": "^1.0.3",
+    "gifuct-js": "^2.1.2",
     "hono": "^4.13.7",
     "lucide-react": "^0.460.0",
     "react": "^19.0.0",

@@ -20,7 +20,7 @@ export const THEMES = [
   {
     id: 'loom',
     label: 'Loom',
-    description: 'Glyphloom: ink-black night with lantern amber.',
+    description: 'Glyphloom: cream paper, black ink, typewriter type, red accent.',
   },
   {
     id: 'slate',

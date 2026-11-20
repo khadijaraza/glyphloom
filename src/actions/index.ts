@@ -167,8 +167,8 @@ Effects (each: id, kind, label, enabled, mask, speed 0-3 (1=normal), intensity 0
   cycle   — characters flicker/rain (rain, data streams, static, waterfalls)
   breathe — slow brightness swell (sky, aura, glow of dusk)
 
-Global fields: cutout (0-1 background removal, 0 = off), title, cols (40-200, ~110 typical; lower = chunkier), glyphs (${Object.keys(GLYPH_SETS).join(' | ')}),
-cellStyle ('glyph' colored characters | 'tile' mosaic: bright areas become solid colored squares with glyphs, great for creatures and bold subjects; best at cols 60-100), grid (0-1 faint cell grid), colorMode ('source' | 'mono' | 'duotone'),
+Global fields: cutout (0-1 background removal, 0 = off), title, cols (40-320; 140-200 typical for glyph, 220-280 for dots; lower = chunkier), glyphs (${Object.keys(GLYPH_SETS).join(' | ')}),
+cellStyle ('glyph' colored characters | 'dots' stipple: round dots sized by brightness, finest detail | 'tile' mosaic: bright areas become solid colored squares with glyphs, great for creatures and bold subjects; best at cols 60-100), grid (0-1 faint cell grid), colorMode ('source' | 'mono' | 'duotone'),
 ink (#hex, used by mono/duotone), background (#hex, near-black usually), contrast 0.5-2, brightness -0.5..0.5,
 saturation 0-2, hueShift -180..180, tempo 0-3.
 
@@ -193,6 +193,7 @@ Rules of taste:
 - Use the image summary's hue/lum/y statistics to set mask ranges; make masks tight enough to isolate the subject.
 - Effect ids are short kebab-case and unique (e.g. "lantern-glow").
 - Labels are 1-3 words naming the subject ("Lanterns", "Lake").
+- Detail: prefer high resolution. For organic subjects (flowers, smoke, faces, animals, water) use cellStyle 'dots' at cols 220-280: stipple reads beautifully. Use 'glyph' at cols 140-200 for scenes that should read as typed characters.
 - This is ASCII art: default to glyphs 'classic' or 'dense'. Use 'blocks' or 'dots' only when the person asks for pixel/blocky/dotted looks.
 - Title: 2-4 evocative words.`
 
@@ -270,7 +271,10 @@ export const actions: Record<string, ActionHandler<Env>> = {
     const b: Billed = { tools, env, callerJwt, payer: m.payer }
 
     const mode = params.mode === 'object' ? 'OBJECT (isolated subject, remove the background)' : 'SCENE'
-    const instruction = `Mode: ${mode}
+    const animatedNote = params.animated === true
+      ? '\nThe source is an ANIMATED GIF (this is its first frame). It already moves; add at most 1-2 subtle accents (glow, sparkle, shimmer) and no movers (rise/wind/bob/drift/bloom), which would fight its own motion.'
+      : ''
+    const instruction = `Mode: ${mode}${animatedNote}
 What the person wants: ${prompt || '(no description — infer the scene from the image)'}
 
 Image color summary (from the actual pixels):
@@ -385,14 +389,14 @@ You are now EDITING an existing recipe. Return a minimal JSON PATCH, not the who
         from: `${fromName.replace(/[<>"]/g, '')} via Glyphloom <${env.APP_NAME}@app.space>`,
         to: toEmail,
         subject: `${fromName} made you something: “${title}”`,
-        html: `<div style="font-family:ui-monospace,Menlo,monospace;background:#07070c;color:#f5e6c8;padding:32px;border-radius:12px">
-<p style="margin:0 0 8px;color:#9a8f7a;font-size:12px;letter-spacing:.1em">GLYPHLOOM</p>
+        html: `<div style="font-family:'Courier Prime','Courier New',monospace;background:#f3eee3;color:#161412;padding:32px;border-radius:6px">
+<p style="margin:0 0 8px;color:#c8281e;font-size:12px;letter-spacing:.15em;font-weight:bold">GLYPHLOOM</p>
 <h1 style="margin:0 0 16px;font-size:22px">${safe(fromName)} sent you a moving ASCII piece</h1>
 <p style="margin:0 0 8px">“${safe(title)}”</p>
-${note ? `<p style="margin:0 0 20px;color:#cfc3a8">${safe(note)}</p>` : ''}
-${gifUrl ? `<a href="${link}"><img src="${gifUrl}" alt="${safe(title)}, animated" width="520" style="display:block;max-width:100%;height:auto;border-radius:10px;margin:0 0 20px;border:1px solid #222" /></a>` : ''}
-<a href="${link}" style="display:inline-block;background:#ffb347;color:#07070c;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Watch it move →</a>
-<p style="margin:20px 0 0;color:#6b6457;font-size:12px">Sign in on the page to tweak it together live.</p></div>`,
+${note ? `<p style="margin:0 0 20px;color:#4a443c">${safe(note)}</p>` : ''}
+${gifUrl ? `<a href="${link}"><img src="${gifUrl}" alt="${safe(title)}, animated" width="520" style="display:block;max-width:100%;height:auto;border-radius:4px;margin:0 0 20px;border:1px solid #d8d0c0" /></a>` : ''}
+<a href="${link}" style="display:inline-block;background:#c8281e;color:#fffaf2;padding:10px 18px;border-radius:3px;text-decoration:none;font-weight:bold">Watch it move →</a>
+<p style="margin:20px 0 0;color:#6b645a;font-size:12px">Sign in on the page to tweak it together live.</p></div>`,
         text: `${fromName} sent you “${title}”. ${note}\n\nWatch it: ${link}`,
       })
       if (!mail.ok) return fail(`Shared in-app, but the email failed: ${mail.error}`)

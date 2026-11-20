@@ -87,10 +87,13 @@ export const recipeSchema = z.object({
   version: z.literal(1).default(1),
   title: z.string().max(80).default('Untitled'),
   /** Grid width in characters; rows follow from the image aspect. */
-  cols: z.number().int().min(40).max(200).default(110),
+  cols: z.number().int().min(40).max(320).default(140),
   glyphs: z.enum(Object.keys(GLYPH_SETS) as [GlyphSet, ...GlyphSet[]]).default('classic'),
-  /** 'glyph' = colored characters on background; 'tile' = mosaic squares with glyphs. */
-  cellStyle: z.enum(['glyph', 'tile']).default('glyph'),
+  /**
+   * 'glyph' = colored characters; 'tile' = mosaic squares with glyphs;
+   * 'dots' = stipple, round dots sized by brightness (best at 200–300 cols).
+   */
+  cellStyle: z.enum(['glyph', 'tile', 'dots']).default('glyph'),
   colorMode: z.enum(['source', 'mono', 'duotone']).default('source'),
   /** Used by mono/duotone, and as the background. Hex colors. */
   ink: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#f5e6c8'),
@@ -156,7 +159,7 @@ export function applyPatch(base: Recipe, patch: Record<string, unknown>): Recipe
 
 /** Slider metadata for the Tweaks panel — one source of truth for ranges. */
 export const GLOBAL_SLIDERS = [
-  { key: 'cols', label: 'Density', min: 40, max: 200, step: 1 },
+  { key: 'cols', label: 'Density', min: 40, max: 320, step: 1 },
   { key: 'contrast', label: 'Contrast', min: 0.5, max: 2, step: 0.01 },
   { key: 'brightness', label: 'Brightness', min: -0.5, max: 0.5, step: 0.01 },
   { key: 'saturation', label: 'Saturation', min: 0, max: 2, step: 0.01 },

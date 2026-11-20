@@ -1,4 +1,4 @@
-/** Gallery/inbox card: a still frame that animates on hover. */
+/** Gallery/inbox card: a still frame that animates on hover. (GIF sources show their first frame.) */
 
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'

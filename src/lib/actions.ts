@@ -40,8 +40,8 @@ export const api = {
   allowance: () => call<Allowance>('allowance', {}),
   generateSources: (prompt: string, mode: 'scene' | 'object' = 'scene', count: 1 | 4 = 1) =>
     call<{ keys: string[]; payer: 'owner' | 'caller' }>('generateSources', { prompt, mode, count, ownCredits: ownCreditsPref.get() }),
-  buildRecipe: (prompt: string, summary: string, thumbnail: string | null, mode: 'scene' | 'object' = 'scene') =>
-    call<{ recipe: Recipe }>('buildRecipe', { prompt, summary, thumbnail, mode, ownCredits: ownCreditsPref.get() }),
+  buildRecipe: (prompt: string, summary: string, thumbnail: string | null, mode: 'scene' | 'object' = 'scene', animated = false) =>
+    call<{ recipe: Recipe }>('buildRecipe', { prompt, summary, thumbnail, mode, animated, ownCredits: ownCreditsPref.get() }),
   refineRecipe: (recipe: Recipe, instruction: string) =>
     call<{ recipe: Recipe; patch: Record<string, unknown> }>('refineRecipe', { recipe, instruction, ownCredits: ownCreditsPref.get() }),
   sendPiece: (p: { pieceId: string; toUserId?: string; toEmail?: string; note?: string; fromName?: string; gifKey?: string }) =>

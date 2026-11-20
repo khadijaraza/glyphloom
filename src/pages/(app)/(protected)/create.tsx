@@ -13,16 +13,18 @@ import { AllowanceBar } from '../../../components/AllowanceBar'
 import { Button, Textarea, useToast } from '@/components/ui'
 import { describeGrid, sampleImage } from '../../../ascii/engine'
 import { loadImage, thumbnailBase64 } from '../../../ascii/image'
+import { AnimatedSource, firstFrame, type Source } from '../../../ascii/source'
 import { DEMO_OBJECT_RECIPE, DEMO_RECIPE, paintKoi, paintLanternScene, PREVIEW_OBJECT_RECIPE, PREVIEW_RECIPE } from '../../../ascii/demo'
 import type { Recipe } from '../../../ascii/recipe'
 import { api } from '../../../lib/actions'
 import { cn } from '../../../lib/utils'
 
-type Candidate = { key: string | null; image: CanvasImageSource & { width: number; height: number }; demo?: Recipe }
+type Candidate = { key: string | null; image: Source; demo?: Recipe }
 type PieceData = {
   title: string
   prompt: string
   sourceKey: string
+  sourceKind: 'image' | 'gif'
   recipe: Recipe
   visibility: 'private' | 'link'
   collaborators: string[]
@@ -86,9 +88,11 @@ export default function CreatePage() {
     if (file.size > 12 * 1024 * 1024) return error('Image too large', 'Keep it under 12 MB.')
     setPhase('uploading')
     try {
+      const isGif = file.type === 'image/gif'
+      // Decode locally first so a broken GIF fails before anything is uploaded.
+      const image: Source = isGif ? await AnimatedSource.fromBuffer(await file.arrayBuffer()) : await loadImage(URL.createObjectURL(file))
       const res = await upload(file, file.name)
       if (!res.success || !res.key) throw new Error(res.error ?? 'Upload failed')
-      const image = await loadImage(getUrl(res.key))
       setCandidates([{ key: res.key, image }])
       setPicked(0)
     } catch (e) {
@@ -121,14 +125,16 @@ export default function CreatePage() {
         sourceKey = up.key
         recipe = cand.demo
       } else {
-        const grid = sampleImage(cand.image, 110, 'glyph')
-        const thumb = cand.image instanceof HTMLImageElement ? thumbnailBase64(cand.image) : null
-        recipe = (await api.buildRecipe(prompt, describeGrid(grid), thumb, mode)).recipe
+        const still = firstFrame(cand.image)
+        const grid = sampleImage(still, 110, 'glyph')
+        const animated = cand.image instanceof AnimatedSource
+        recipe = (await api.buildRecipe(prompt, describeGrid(grid), thumbnailBase64(still), mode, animated)).recipe
       }
       const id = await createConfirmed({
         title: recipe.title || prompt.slice(0, 60) || 'Untitled',
         prompt,
         sourceKey: sourceKey!,
+        sourceKind: cand.image instanceof AnimatedSource ? 'gif' : 'image',
         recipe,
         visibility: 'private',
         collaborators: [],
@@ -147,7 +153,7 @@ export default function CreatePage() {
       <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">New piece</p>
       <h1 className="mt-2 text-2xl font-semibold text-foreground sm:text-3xl">What should come alive?</h1>
       <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-        Describe a scene (one version, or four to pick from), or bring your own image. Describe how things move,
+        Describe a scene (one version, or four to pick from), or bring your own image or GIF. Describe how things move,
         too: “lanterns drifting up”, “grass bending in the wind”.
       </p>
 
@@ -201,7 +207,7 @@ export default function CreatePage() {
           </Button>
           <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={busy}>
             {phase === 'uploading' ? <Loader2 className="animate-spin" /> : <ImageUp />}
-            Upload an image
+            Upload an image or GIF
           </Button>
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => onFile(e.target.files?.[0])} />
           <Button variant="ghost" onClick={useDemo} disabled={busy}>
@@ -243,8 +249,19 @@ export default function CreatePage() {
                   picked === i ? 'border-primary ring-2 ring-primary/40' : 'border-border hover:border-foreground/25',
                 )}
               >
-                <AsciiCanvas image={c.image} recipe={c.demo ?? (mode === 'object' ? PREVIEW_OBJECT_RECIPE : PREVIEW_RECIPE)} />
-                <span className="absolute left-3 top-3 rounded-full bg-black/60 px-2 py-0.5 font-mono text-[11px] text-foreground">
+                <AsciiCanvas
+                  image={c.image}
+                  recipe={
+                    c.demo ??
+                    // A GIF already moves: preview it plain, so what you see is the GIF itself.
+                    (c.image instanceof AnimatedSource
+                      ? { ...PREVIEW_RECIPE, effects: [] }
+                      : mode === 'object'
+                        ? PREVIEW_OBJECT_RECIPE
+                        : PREVIEW_RECIPE)
+                  }
+                />
+                <span className="absolute left-3 top-3 rounded-sm bg-[#f3eee3] px-2 py-0.5 text-[11px] font-bold text-[#161412]">
                   {String.fromCharCode(65 + i)}
                 </span>
               </button>

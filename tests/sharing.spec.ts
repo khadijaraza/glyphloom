@@ -109,3 +109,17 @@ test('publish renders a GIF and lists the piece in the public gallery', async ({
   expect(res.headers()['content-type']).toContain('image/gif')
   await anon.close()
 })
+
+test('an uploaded GIF plays as the source (frames change), no paid calls', async ({ users }) => {
+  test.setTimeout(60_000)
+  const [ada] = await users(['Ada'])
+  await ada.page.goto('/create')
+  await ada.page.locator('input[type=file]').setInputFiles('tests/fixtures/pulse.gif')
+  const canvas = ada.page.locator('canvas').first()
+  await expect(canvas).toBeVisible({ timeout: 20_000 })
+  const snap = () => canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL())
+  const a = await snap()
+  await ada.page.waitForTimeout(500)
+  const b = await snap()
+  expect(a).not.toEqual(b)
+})

@@ -19,6 +19,8 @@ export const piecesSchema: CollectionSchema = {
     { name: 'prompt', storage: 'text', interpretation: 'plain' },
     /** R2 key in the app (public) scope. */
     { name: 'sourceKey', storage: 'text', interpretation: 'plain', required: true },
+    /** 'gif' when the source is an animated GIF (decoded and played frame by frame). */
+    { name: 'sourceKind', storage: 'text', interpretation: { kind: 'select', options: ['image', 'gif'] } },
     { name: 'recipe', storage: 'text', interpretation: { kind: 'json' } },
     { name: 'visibility', storage: 'text', interpretation: { kind: 'select', options: ['private', 'link'] } },
     { name: 'collaborators', storage: 'text', interpretation: { kind: 'json' } },

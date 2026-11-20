@@ -11,9 +11,12 @@
  */
 
 import { GLYPH_SETS, type Effect, type Mask, type Recipe } from './recipe'
+import { AnimatedSource, type Source } from './source'
 
 /** Character cells are taller than wide; tiles are square. */
-const CELL_ASPECT = { glyph: 0.58, tile: 1 } as const
+const CELL_ASPECT = { glyph: 0.58, tile: 1, dots: 1 } as const
+/** Smallest legible cell width per style, CSS px. */
+const MIN_CELL_PX = { glyph: 5, tile: 6, dots: 2.6 } as const
 
 export interface SourceGrid {
   cols: number
@@ -174,8 +177,24 @@ interface PreparedEffect {
   weights: Float32Array
   /** Per-row background estimate used to fill the hole a moving region leaves. */
   fill?: Float32Array // rows * 3
+  /** Drift: the mask's bounding box (cells), so the swim wave knows head from tail. */
+  box?: { minX: number; maxX: number; minY: number; maxY: number }
   /** Phase/bloom: the masked region's centroid (cells), radius (column units) and base row. */
   disc?: { cx: number; cy: number; r: number; base: number }
+}
+
+function boxOf(grid: SourceGrid, weights: Float32Array) {
+  let minX = grid.cols, maxX = 0, minY = grid.rows, maxY = 0
+  for (let i = 0; i < weights.length; i++) {
+    if (weights[i] <= 0.5) continue
+    const x = i % grid.cols
+    const y = Math.floor(i / grid.cols)
+    if (x < minX) minX = x
+    if (x > maxX) maxX = x
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+  }
+  return minX > maxX ? { minX: 0, maxX: grid.cols - 1, minY: 0, maxY: grid.rows - 1 } : { minX, maxX, minY, maxY }
 }
 
 /** Centroid and equal-area radius of a mask, measured in column-width units. */
@@ -208,6 +227,9 @@ export class AsciiEngine {
   private canvas: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D
   private image: (CanvasImageSource & { width: number; height: number }) | null = null
+  /** Set when the source is a GIF: the current frame is swapped into `image`. */
+  private anim: AnimatedSource | null = null
+  private frameIdx = -1
   private recipe: Recipe
   private grid: SourceGrid | null = null
   private graded: Graded | null = null
@@ -236,10 +258,23 @@ export class AsciiEngine {
 
   private capCols: boolean
 
-  setImage(img: CanvasImageSource & { width: number; height: number }) {
-    this.image = img
+  setImage(src: Source) {
+    this.anim = src instanceof AnimatedSource ? src : null
+    this.frameIdx = this.anim ? 0 : -1
+    this.image = this.anim ? this.anim.frames[0] : (src as Exclude<Source, AnimatedSource>)
     this.gridKey = ''
     this.prepare()
+  }
+
+  /** Swap in the GIF frame for time t (seconds); re-samples when it changes. */
+  private syncFrame(t: number) {
+    if (!this.anim) return
+    const idx = this.anim.frameAt(t * 1000 * Math.max(0.05, this.recipe.tempo))
+    if (idx === this.frameIdx) return
+    this.frameIdx = idx
+    this.image = this.anim.frames[idx]
+    this.gridKey = ''
+    this.prepare(false)
   }
 
   setRecipe(recipe: Recipe) {
@@ -293,10 +328,10 @@ export class AsciiEngine {
 
   private effectiveCols() {
     if (!this.cssWidth || !this.capCols) return this.recipe.cols
-    return Math.max(32, Math.min(this.recipe.cols, Math.floor(this.cssWidth / 6.5)))
+    return Math.max(32, Math.min(this.recipe.cols, Math.floor(this.cssWidth / MIN_CELL_PX[this.recipe.cellStyle])))
   }
 
-  private prepare() {
+  private prepare(drawAfter = true) {
     if (!this.image) return
     const cols = this.effectiveCols()
     const key = `${cols}:${this.recipe.cellStyle}`
@@ -314,12 +349,13 @@ export class AsciiEngine {
         const weights = maskWeights(grid, effect.mask, this.keep)
         const p: PreparedEffect = { effect, weights }
         if (isMover(effect.kind)) p.fill = rowFill(grid, this.graded!, weights)
+        if (effect.kind === 'drift') p.box = boxOf(grid, weights)
         if (effect.kind === 'phase' || effect.kind === 'bloom') p.disc = discOf(grid, weights, 1 / CELL_ASPECT[this.recipe.cellStyle])
         return p
       })
     // Moving effects decide *which* cell shows, so they run before the rest.
     this.effects.sort((a, b) => order(a.effect.kind) - order(b.effect.kind))
-    this.draw(this.paused ? 1.7 : (performance.now() - this.start) / 1000)
+    if (drawAfter) this.draw(this.paused ? 1.7 : (performance.now() - this.start) / 1000)
   }
 
   private resize() {
@@ -337,6 +373,7 @@ export class AsciiEngine {
 
   /** Render one frame at time t (seconds). Public so paused/thumbnail views can draw once. */
   draw(t: number) {
+    this.syncFrame(t)
     const grid = this.grid
     const graded = this.graded
     if (!grid || !graded || !this.cssWidth) return
@@ -350,12 +387,14 @@ export class AsciiEngine {
     const [bgR, bgG, bgB] = hexToRgb(recipe.background)
     const [inkR, inkG, inkB] = hexToRgb(recipe.ink)
     const tile = recipe.cellStyle === 'tile'
+    const dots = recipe.cellStyle === 'dots'
     const blocks = recipe.glyphs === 'blocks'
     const time = t * recipe.tempo
 
     ctx.fillStyle = recipe.background
     ctx.fillRect(0, 0, this.cssWidth, ch * rows)
-    if (recipe.grid > 0) {
+    // At stipple density a grid is just noise.
+    if (recipe.grid > 0 && cw >= 5) {
       ctx.strokeStyle = `rgba(255,255,255,${0.09 * recipe.grid})`
       ctx.lineWidth = 0.5
       ctx.beginPath()
@@ -411,11 +450,16 @@ export class AsciiEngine {
                 fy = y + Math.sin(time * sp * 1.4) * (1 + k * 4) * e.scale
                 fx = x + Math.sin(time * sp * 0.7) * k * 1.5
               } else if (e.kind === 'drift') {
-                // Travel across and follow one slow sine path; a faint body wave on top.
-                const travel = time * sp * (1 + 4 * k)
-                const path = Math.sin((travel / cols) * Math.PI * 2 * e.scale) * rows * 0.18 * (0.4 + k)
+                // Swim: travel across along one slow sine path, while a wave runs down the
+                // body from head (leading edge) to tail, growing toward the tail.
+                const travel = time * sp * (1.5 + 5 * k)
+                const path = Math.sin((travel / cols) * Math.PI * 2 * e.scale) * rows * 0.16 * (0.4 + k)
+                const bx = (((x - travel) % cols) + cols) % cols
+                const box = p.box!
+                const u = Math.min(1, Math.max(0, (box.maxX - bx) / Math.max(1, box.maxX - box.minX))) // 0 head, 1 tail
+                const wag = Math.sin(time * sp * 6 - u * 5) * u * u * (box.maxY - box.minY) * 0.18
                 fx = x - travel
-                fy = y - path + Math.sin(time * sp * 2.2 + x * 0.22) * 0.35
+                fy = y - path - wag
               } else if (p.disc) {
                 // Bloom: open out from the base, hold, close. Horizontal opens more than vertical.
                 const c = (((time * sp * 0.1) % 1) + 1) % 1
@@ -562,7 +606,23 @@ export class AsciiEngine {
         const px = x * cw
         const py = y * ch
 
-        if (tile) {
+        if (dots) {
+          // Stipple: a round dot per cell, radius by brightness, nudged off the grid by a
+          // fixed per-cell jitter so it reads as hand-placed ink rather than a lattice.
+          // True stippling: dot *density* follows brightness (each cell keeps its dot
+          // with probability ~ l^1.3), so highlights stay airy instead of a solid mass.
+          if (l < 0.05 || hash2(x * 5 + 3, y * 11 + 7) > Math.pow(l, 1.3) * 1.05) {
+            glyphs[y * cols + x] = ' '
+          } else {
+            const rad = cw * (0.16 + 0.24 * l)
+            const jx = (hash2(x, y * 7 + 1) - 0.5) * cw * 0.55
+            const jy = (hash2(x * 3 + 2, y) - 0.5) * ch * 0.55
+            ctx.fillStyle = css(r * 1.2, g * 1.2, b * 1.2)
+            ctx.beginPath()
+            ctx.arc(px + cw / 2 + jx, py + ch / 2 + jy, rad, 0, 6.283)
+            ctx.fill()
+          }
+        } else if (tile) {
           // Mosaic: bright cells become solid blocks with a sparse dark glyph
           // (light reads as "less ink"); mid cells are bare glyphs; shadows stay empty.
           if (l >= 0.36) {

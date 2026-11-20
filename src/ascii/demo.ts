@@ -98,7 +98,7 @@ export function paintLanternScene(w = 960, h = 600): HTMLCanvasElement {
 
 export const DEMO_RECIPE: Recipe = parseRecipe({
   title: 'Lanterns over the lake',
-  cols: 120,
+  cols: 170,
   glyphs: 'classic',
   cellStyle: 'glyph',
   contrast: 1.25,
@@ -114,7 +114,7 @@ export const DEMO_RECIPE: Recipe = parseRecipe({
 
 /** Generic first-look recipe for previews before the AI has seen the image. */
 export const PREVIEW_RECIPE: Recipe = parseRecipe({
-  cols: 96,
+  cols: 150,
   contrast: 1.2,
   saturation: 1.2,
   effects: [
@@ -176,24 +176,24 @@ export function paintKoi(w = 1800, h = 1100): HTMLCanvasElement {
 
 export const DEMO_OBJECT_RECIPE: Recipe = parseRecipe({
   title: 'Koi',
-  cols: 120,
+  cols: 240,
   glyphs: 'classic',
-  cellStyle: 'tile',
+  cellStyle: 'dots',
   cutout: 0.35,
-  grid: 0.5,
+  grid: 0,
   contrast: 1.1,
   saturation: 1.2,
   effects: [
-    { id: 'koi-drift', kind: 'drift', label: 'Koi', mask: { subject: true }, speed: 0.6, intensity: 0.3, scale: 1 },
+    { id: 'koi-drift', kind: 'drift', label: 'Koi', mask: { subject: true }, speed: 0.5, intensity: 0.35, scale: 1 },
     { id: 'koi-shimmer', kind: 'glow', label: 'Scales', mask: { subject: true, lum: [0.6, 1] }, speed: 1.2, intensity: 0.35, scale: 0.6 },
   ],
 })
 
 export const PREVIEW_OBJECT_RECIPE: Recipe = parseRecipe({
-  cols: 80,
-  cellStyle: 'tile',
+  cols: 220,
+  cellStyle: 'dots',
   cutout: 0.35,
-  grid: 0.5,
+  grid: 0,
   saturation: 1.15,
   effects: [{ id: 'bob', kind: 'bob', label: 'Subject', mask: { subject: true }, speed: 0.8, intensity: 0.4 }],
 })
@@ -254,14 +254,16 @@ export function paintLily(w = 1400, h = 820): HTMLCanvasElement {
 
 export const LILY_RECIPE: Recipe = parseRecipe({
   title: 'Lily',
-  cols: 150,
+  cols: 260,
   glyphs: 'classic',
-  cellStyle: 'glyph',
+  cellStyle: 'dots',
+  colorMode: 'mono',
+  ink: '#f3ede0',
   cutout: 0.3,
-  grid: 0.25,
-  contrast: 0.95,
-  brightness: -0.08,
-  saturation: 1.25,
+  grid: 0,
+  contrast: 1.05,
+  brightness: 0,
+  saturation: 1,
   effects: [
     { id: 'lily-bloom', kind: 'bloom', label: 'Lily', mask: { subject: true }, speed: 0.55, intensity: 0.55, scale: 1 },
     { id: 'lily-glow', kind: 'glow', label: 'Heart', mask: { subject: true, hue: [35, 60] }, speed: 0.8, intensity: 0.35, scale: 1.5 },

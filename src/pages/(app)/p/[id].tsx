@@ -12,7 +12,7 @@ import { SendDialog } from '../../../components/SendDialog'
 import { Tweaks } from '../../../components/Tweaks'
 import { Button, useToast } from '@/components/ui'
 import type { AsciiEngine } from '../../../ascii/engine'
-import { loadImage } from '../../../ascii/image'
+import { loadSource, type Source } from '../../../ascii/source'
 import { renderGif } from '../../../ascii/gif'
 import { safeRecipe, type Recipe } from '../../../ascii/recipe'
 import { api } from '../../../lib/actions'
@@ -22,6 +22,7 @@ type PieceData = {
   title: string
   prompt: string
   sourceKey: string
+  sourceKind?: 'image' | 'gif'
   recipe: Recipe
   visibility: 'private' | 'link'
   collaborators: string[]
@@ -66,7 +67,7 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
   const fallback = useMemo(() => safeRecipe(piece.recipe), [piece.recipe])
   const live = useLiveRecipe(id, fallback, me)
 
-  const [image, setImage] = useState<HTMLImageElement | null>(null)
+  const [image, setImage] = useState<Source | null>(null)
   const [highlight, setHighlight] = useState<string | null>(null)
   const [history, setHistory] = useState<Recipe[]>([])
   const [sendOpen, setSendOpen] = useState(false)
@@ -77,7 +78,7 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
 
   useEffect(() => {
     let alive = true
-    loadImage(getUrl(piece.sourceKey))
+    loadSource(getUrl(piece.sourceKey), piece.sourceKind)
       .then((img) => alive && setImage(img))
       .catch(() => error('Couldn’t load the source image'))
     return () => {
@@ -135,6 +136,7 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
         title: `${piece.title || 'Untitled'} (remix)`,
         prompt: piece.prompt,
         sourceKey: piece.sourceKey,
+        sourceKind: piece.sourceKind ?? 'image',
         recipe: live.recipe,
         visibility: 'private',
         collaborators: [],
@@ -301,7 +303,7 @@ function Editor({ id, piece, ownerId }: { id: string; piece: PieceData; ownerId:
         )}
 
         <div className="loom-grid flex flex-1 items-center justify-center p-4 sm:p-8">
-          <div className="w-full max-w-5xl overflow-hidden rounded-xl border border-border shadow-2xl shadow-black/60" style={{ background: live.recipe.background }}>
+          <div className="w-full max-w-5xl overflow-hidden rounded-xl border border-border shadow-xl shadow-[#161412]/20" style={{ background: live.recipe.background }}>
             {image ? (
               <AsciiCanvas image={image} recipe={live.recipe} highlight={highlight} onEngine={onEngine} />
             ) : (
